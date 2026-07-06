@@ -36,6 +36,43 @@
         .toast-leave-active { transform: translateY(-100%); opacity: 0; transition: all 0.3s ease-in; }
         
         .transition-transform { transition-property: transform; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 300ms; }
+
+        /* Image Lightbox */
+        #imageLightbox {
+            animation: fadeInBg 0.2s ease-out;
+        }
+        @keyframes fadeInBg {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        #imageLightbox img {
+            animation: zoomIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes zoomIn {
+            from { transform: scale(0.7); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .img-zoom-btn {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(15,23,42,0.65);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 5px 10px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s, background 0.2s;
+            z-index: 5;
+            backdrop-filter: blur(4px);
+        }
+        .img-zoom-btn:hover { background: rgba(59,130,246,0.85); }
+        .group:hover .img-zoom-btn { opacity: 1; }
     </style>
 </head>
 <body class="text-gray-800">
@@ -108,6 +145,22 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Image Lightbox Modal -->
+    <div id="imageLightbox" class="fixed inset-0 bg-black/85 z-[200] flex items-center justify-center hidden backdrop-blur-sm p-4" onclick="closeImageLightbox()">
+        <div class="relative max-w-5xl w-full max-h-[92vh] flex flex-col items-center" onclick="event.stopPropagation()">
+            <!-- Close button -->
+            <button onclick="closeImageLightbox()" class="absolute -top-3 -right-3 z-10 bg-white text-gray-700 hover:text-red-600 hover:bg-red-50 w-9 h-9 rounded-full flex items-center justify-center shadow-xl border border-gray-200 transition text-lg font-bold">
+                <i class="fa-solid fa-times"></i>
+            </button>
+            <!-- Image -->
+            <div class="bg-white/10 rounded-2xl overflow-hidden shadow-2xl border border-white/20 max-h-[85vh] flex items-center justify-center p-2">
+                <img id="lightboxImg" src="" alt="" class="max-w-full max-h-[80vh] object-contain rounded-xl" style="min-width:200px;min-height:150px;">
+            </div>
+            <!-- Caption -->
+            <div id="lightboxCaption" class="mt-3 text-white/90 text-sm font-medium bg-black/40 px-4 py-1.5 rounded-full backdrop-blur-sm"></div>
         </div>
     </div>
 
@@ -1195,15 +1248,25 @@
 
                     let costLineHtml = isShowCostInCatalog ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr}</span></div>` : '';
 
+                    const noteHtml = p.note ? `
+                                <div class="mb-3 flex items-start gap-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2">
+                                    <i class="fa-solid fa-note-sticky text-amber-400 text-xs mt-0.5 flex-shrink-0"></i>
+                                    <p class="text-xs text-amber-800 line-clamp-2 leading-relaxed" title="${escapeHTML(p.note)}">${escapeHTML(p.note)}</p>
+                                </div>` : '';
+
                     let card = `
-                        <div onclick="openProductDetailModal('${escapeForJS(p.id)}')" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg hover:border-blue-200 transition-all duration-300 group flex flex-col h-full transform hover:-translate-y-1 cursor-pointer">
-                            <div class="h-48 sm:h-52 bg-slate-50 overflow-hidden relative flex-shrink-0 flex items-center justify-center">
+                        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg hover:border-blue-200 transition-all duration-300 group flex flex-col h-full transform hover:-translate-y-1">
+                            <div onclick="openImageLightbox('${escapeForJS(imgSource)}', '${escapeForJS(p.name)}')" class="h-48 sm:h-52 bg-slate-50 overflow-hidden relative flex-shrink-0 flex items-center justify-center cursor-zoom-in">
                                 <img src="${escapeHTML(imgSource)}" alt="${escapeHTML(p.name)}" class="max-w-full max-h-full object-contain p-2 group-hover:scale-105 transition duration-500" onerror="this.src='https://placehold.co/400x300/fee2e2/ef4444?text=Image+Error'">
                                 <div class="absolute top-3 right-3 bg-white/90 backdrop-blur px-2.5 py-1 rounded-md text-xs font-bold text-gray-800 shadow-sm border border-gray-100">${escapeHTML(p.id)}</div>
+                                <button class="img-zoom-btn" onclick="event.stopPropagation(); openImageLightbox('${escapeForJS(imgSource)}', '${escapeForJS(p.name)}')">
+                                    <i class="fa-solid fa-magnifying-glass-plus"></i> ขยายภาพ
+                                </button>
                             </div>
-                            <div class="p-5 flex flex-col flex-1">
+                            <div onclick="openProductDetailModal('${escapeForJS(p.id)}')" class="p-5 flex flex-col flex-1 cursor-pointer">
                                 <h3 class="text-lg font-bold text-gray-800 mb-1 line-clamp-2 leading-tight group-hover:text-blue-600 transition-colors" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</h3>
-                                <p class="text-xs font-medium text-blue-500 mb-4 bg-blue-50 w-fit px-2 py-0.5 rounded border border-blue-100">${escapeHTML(p.category) || 'ไม่ระบุประเภท'}</p>
+                                <p class="text-xs font-medium text-blue-500 mb-3 bg-blue-50 w-fit px-2 py-0.5 rounded border border-blue-100">${escapeHTML(p.category) || 'ไม่ระบุประเภท'}</p>
+                                ${noteHtml}
                                 <div class="mb-5 flex-1">
                                     ${costLineHtml}
                                     <div class="space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
@@ -1334,6 +1397,24 @@
         }
 
         function closeProductDetailModal() { document.getElementById('productDetailModal').classList.add('hidden'); }
+
+        function openImageLightbox(src, caption) {
+            const lb = document.getElementById('imageLightbox');
+            document.getElementById('lightboxImg').src = src;
+            document.getElementById('lightboxCaption').textContent = caption || '';
+            lb.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeImageLightbox() {
+            document.getElementById('imageLightbox').classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+        // Close lightbox with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeImageLightbox();
+            }
+        });
 
         function getBase64(file) {
             return new Promise((resolve, reject) => {
