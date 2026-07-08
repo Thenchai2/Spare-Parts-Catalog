@@ -1041,43 +1041,56 @@
         const LS_CACHE_KEY = 'spareparts_cache_v1';
         const LS_CACHE_TTL = 5 * 60 * 1000; // 5 นาที (ms)
 
-        async function fetchData(silent = false) {
-            // ตรวจสอบ cache ใน localStorage ก่อน
-            try {
-                const raw = localStorage.getItem(LS_CACHE_KEY);
-                if (raw) {
-                    const { data, ts } = JSON.parse(raw);
-                    const age = Date.now() - ts;
-                    // ถ้า cache ยังสด (<5 นาที) → โหลดเลย ไม่รอ server
-                    if (age < LS_CACHE_TTL && data) {
-                        db = data;
-                        updateAllViews();
-                        if (!silent) {
-                            // Refresh ข้อมูลใหม่เบื้องหลังเงียบๆ โดยไม่แสดง Spinner
-                            fetchFromServer(true);
+        async function fetchData(forceRefresh = false) {
+            // ถ้าไม่ได้บังคับ refresh → ตรวจสอบ localStorage cache ก่อน
+            if (!forceRefresh) {
+                try {
+                    const raw = localStorage.getItem(LS_CACHE_KEY);
+                    if (raw) {
+                        const cached = JSON.parse(raw);
+                        const age = Date.now() - (cached.ts || 0);
+                        const hasData = cached.data
+                            && Array.isArray(cached.data.products)
+                            && cached.data.products.length > 0;
+
+                        if (age < LS_CACHE_TTL && hasData) {
+                            // ข้อมูล cache ยังสดและไม่ว่าง → แสดงทันที
+                            db = cached.data;
+                            updateAllViews();
+                            // ดึงข้อมูลใหม่เบื้องหลัง (ไม่แสดง spinner)
+                            _fetchFromServer(true);
                             return;
                         }
                     }
+                } catch(e) {
+                    // localStorage มีปัญหา → ล้าง cache แล้วดึงใหม่
+                    try { localStorage.removeItem(LS_CACHE_KEY); } catch(_) {}
                 }
-            } catch(e) { /* localStorage error → ข้ามไปดึงข้อมูลปกติ */ }
+            }
 
-            // ไม่มี cache หรือ cache หมดอายุ → ดึงข้อมูลและแสดง spinner
-            if (!silent) showLoading('กำลังดึงข้อมูลระบบ...');
-            await fetchFromServer(false);
+            // ไม่มี cache / cache หมดอายุ / ข้อมูลว่าง → ดึงจาก server + แสดง spinner
+            showLoading('กำลังดึงข้อมูลระบบ...');
+            await _fetchFromServer(false);
         }
 
-        async function fetchFromServer(background = false) {
+        async function _fetchFromServer(background = false) {
             try {
                 const res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
-                // บันทึกลง localStorage cache
-                try {
-                    localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
-                } catch(e) { /* storage full → ข้ามได้ */ }
-                db = data;
-                updateAllViews();
+
+                // ตรวจสอบว่าข้อมูลที่ได้กลับมา valid ก่อน cache
+                if (data && Array.isArray(data.products)) {
+                    try {
+                        localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+                    } catch(e) { /* storage full → ข้ามได้ */ }
+                    db = data;
+                    updateAllViews();
+                } else {
+                    throw new Error('ข้อมูลที่ได้รับไม่ถูกต้อง');
+                }
             } catch (error) {
-                if (!background) showToast('ไม่สามารถดึงข้อมูลได้', 'error');
+                if (!background) showToast('ไม่สามารถดึงข้อมูลได้: ' + error.message, 'error');
             }
             if (!background) hideLoading();
         }
