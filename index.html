@@ -566,6 +566,14 @@
                             <span>เครื่องจักรใหม่</span>
                         </button>
                     </div>
+
+                    <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm w-full">
+                        <div class="relative w-full md:w-80 flex-shrink-0">
+                            <i class="fa-solid fa-search absolute left-3.5 top-3 text-gray-400"></i>
+                            <input type="text" id="searchMachine" onkeyup="renderMachineTable()" placeholder="พิมพ์รหัส หรือชื่อเครื่องจักร (เว้นวรรคได้)..." class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 text-sm transition shadow-sm">
+                        </div>
+                    </div>
+
                     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden w-full">
                         <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
                             <i class="fa-solid fa-industry text-green-500"></i>
@@ -689,6 +697,7 @@
                                         <th class="p-4 font-medium rounded-tl-lg">รูปภาพ</th>
                                         <th class="p-4 font-medium">รหัสสินค้า</th>
                                         <th class="p-4 font-medium">ชื่อสินค้า</th>
+                                        <th class="p-4 font-medium">หน่วยนับ</th>
                                         <th class="p-4 font-medium text-right text-red-200">ราคาต้นทุน</th>
                                         <th class="p-4 font-medium text-right text-blue-200">ราคา (กลาง)</th>
                                         <th class="p-4 font-medium text-right text-green-200">ราคา (ตัวแทน)</th>
@@ -1029,15 +1038,48 @@
             hideLoading();
         }
 
-        async function fetchData() {
-            showLoading('กำลังดึงข้อมูลระบบ...');
+        const LS_CACHE_KEY = 'spareparts_cache_v1';
+        const LS_CACHE_TTL = 5 * 60 * 1000; // 5 นาที (ms)
+
+        async function fetchData(silent = false) {
+            // ตรวจสอบ cache ใน localStorage ก่อน
             try {
-                let res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
-                let data = await res.json();
+                const raw = localStorage.getItem(LS_CACHE_KEY);
+                if (raw) {
+                    const { data, ts } = JSON.parse(raw);
+                    const age = Date.now() - ts;
+                    // ถ้า cache ยังสด (<5 นาที) → โหลดเลย ไม่รอ server
+                    if (age < LS_CACHE_TTL && data) {
+                        db = data;
+                        updateAllViews();
+                        if (!silent) {
+                            // Refresh ข้อมูลใหม่เบื้องหลังเงียบๆ โดยไม่แสดง Spinner
+                            fetchFromServer(true);
+                            return;
+                        }
+                    }
+                }
+            } catch(e) { /* localStorage error → ข้ามไปดึงข้อมูลปกติ */ }
+
+            // ไม่มี cache หรือ cache หมดอายุ → ดึงข้อมูลและแสดง spinner
+            if (!silent) showLoading('กำลังดึงข้อมูลระบบ...');
+            await fetchFromServer(false);
+        }
+
+        async function fetchFromServer(background = false) {
+            try {
+                const res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
+                const data = await res.json();
+                // บันทึกลง localStorage cache
+                try {
+                    localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+                } catch(e) { /* storage full → ข้ามได้ */ }
                 db = data;
                 updateAllViews();
-            } catch (error) { showToast('ไม่สามารถดึงข้อมูลได้', 'error'); }
-            hideLoading();
+            } catch (error) {
+                if (!background) showToast('ไม่สามารถดึงข้อมูลได้', 'error');
+            }
+            if (!background) hideLoading();
         }
 
         function updateAllViews() {
@@ -1627,15 +1669,26 @@
         function renderMachineTable() {
             const tbody = document.getElementById('machineTableBody');
             const countEl = document.getElementById('machineCount');
+            const searchKeywordString = document.getElementById('searchMachine') ? document.getElementById('searchMachine').value.toLowerCase() : '';
+            const searchKeywords = searchKeywordString.split(/\s+/).filter(k => k.length > 0);
             tbody.innerHTML = '';
-            if(countEl) countEl.textContent = db.machines.length + ' รายการ';
             
-            if(db.machines.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="p-10 text-center text-gray-400"><i class="fa-solid fa-industry text-4xl mb-3 opacity-30 block"></i>ยังไม่มีข้อมูลเครื่องจักร</td></tr>`;
+            let filteredMachines = db.machines;
+            if (searchKeywords.length > 0) {
+                filteredMachines = filteredMachines.filter(m => {
+                    const textToSearch = `${m.id} ${m.name}`.toLowerCase();
+                    return searchKeywords.every(kw => textToSearch.includes(kw));
+                });
+            }
+            
+            if(countEl) countEl.textContent = filteredMachines.length + ' รายการ';
+            
+            if(filteredMachines.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="p-10 text-center text-gray-400"><i class="fa-solid fa-industry text-4xl mb-3 opacity-30 block"></i>ไม่พบข้อมูลเครื่องจักรที่ค้นหา</td></tr>`;
                 return;
             }
             
-            db.machines.forEach(m => {
+            filteredMachines.forEach(m => {
                 const imgSrc = m.image_url || 'https://placehold.co/80x80/f1f5f9/94a3b8?text=No+Img';
                 let tr = `
                     <tr class="hover:bg-slate-50/80 transition-colors duration-150 border-b border-gray-100 last:border-0">
@@ -1824,7 +1877,7 @@
                     return searchKeywords.every(kw => textToSearch.includes(kw));
                 });
             }
-            if (filteredProducts.length === 0) { tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-gray-500">ไม่พบรายการอะไหล่ที่ค้นหา</td></tr>`; return; }
+            if (filteredProducts.length === 0) { tbody.innerHTML = `<tr><td colspan="9" class="p-8 text-center text-gray-500">ไม่พบรายการอะไหล่ที่ค้นหา</td></tr>`; return; }
 
             filteredProducts.forEach(p => {
                 const costVal = parseFloat(String(p.cost).replace(/,/g, '')) || 0;
@@ -1837,6 +1890,7 @@
                         <td class="p-3"><img src="${escapeHTML(p.image_url || 'https://placehold.co/100x100?text=NoImg')}" class="w-12 h-12 object-cover rounded-lg shadow-sm border border-gray-200 bg-white" onerror="this.src='https://placehold.co/100x100?text=Err'"></td>
                         <td class="p-4 font-semibold text-gray-800">${escapeHTML(p.id)}</td>
                         <td class="p-4 text-gray-700 max-w-xs truncate" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</td>
+                        <td class="p-4 text-gray-600">${escapeHTML(p.unit || '-')}</td>
                         <td class="p-4 text-red-600 font-medium text-right">${costStr}</td>
                         <td class="p-4 text-blue-600 font-bold text-right">${pA}</td>
                         <td class="p-4 text-green-600 font-bold text-right">${pB}</td>
