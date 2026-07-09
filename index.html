@@ -826,6 +826,17 @@
             return num.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         }
 
+        // fNumberM: เหมือน fNumber แต่ treat ราคา 0 เป็น "ยังไม่ได้กำหนด" → fallback คำนวณจาก cost
+        // ใช้กับหมวดหมู่เครื่องจักร เพื่อให้พฤติกรรมเหมือนหมวดหมู่อะไหล่
+        function fNumberM(val, fallbackCalc) {
+            let num = parseFloat(val);
+            if (isNaN(num) || val === '' || val === null || val === undefined || num === 0) {
+                num = parseFloat(fallbackCalc);
+            }
+            if (isNaN(num)) num = 0;
+            return num.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        }
+
         function autoCalcMachinePrices(prefix) {
             const cost = parseFloat(document.getElementById(`${prefix}_cost`).value) || 0;
             if (cost > 0) {
@@ -1237,9 +1248,9 @@
             const imgSrc = m.image_url || 'https://placehold.co/400x300/334155/94a3b8?text=No+Image';
             const costVal = parseFloat(String(m.cost).replace(/,/g, '')) || 0;
             const costStr = costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            const pA = fNumber(m.price_a, costVal * 2.1);
-            const pB = fNumber(m.price_b, costVal * 1.7);
-            const pC = fNumber(m.price_c, costVal * 1.3);
+            const pA = fNumberM(m.price_a, costVal * 2.1);
+            const pB = fNumberM(m.price_b, costVal * 1.7);
+            const pC = fNumberM(m.price_c, costVal * 1.3);
             
             let costHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="bg-red-500/20 border border-red-400/30 px-3 py-1.5 rounded-lg text-red-200 text-sm font-medium">ต้นทุน: <span class="text-white font-bold text-base ml-1">฿${costStr}</span></div>` : '';
 
@@ -1372,9 +1383,9 @@
 
                     const costVal = parseFloat(String(m.cost).replace(/,/g, '')) || 0;
                     const costStr = costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                    const pA = fNumber(m.price_a, costVal * 2.1);
-                    const pB = fNumber(m.price_b, costVal * 1.7);
-                    const pC = fNumber(m.price_c, costVal * 1.3);
+                    const pA = fNumberM(m.price_a, costVal * 2.1);
+                    const pB = fNumberM(m.price_b, costVal * 1.7);
+                    const pC = fNumberM(m.price_c, costVal * 1.3);
 
                     let costLineHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr}</span></div>` : '';
 
