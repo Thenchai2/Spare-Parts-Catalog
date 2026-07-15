@@ -452,6 +452,10 @@
                 <div class="mb-8">
                     <label class="block text-sm font-medium text-gray-700 mb-1.5">หมายเหตุ (Note)</label>
                     <textarea id="ep_note" rows="3" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition resize-none"></textarea>
+                    <label class="flex items-center gap-2 mt-2.5 cursor-pointer select-none w-max">
+                        <input type="checkbox" id="ep_is_cancelled" class="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer">
+                        <span class="text-sm font-bold text-red-700">ยกเลิกใช้อะไหล่ชิ้นนี้</span>
+                    </label>
                 </div>
                 <div class="flex justify-end gap-3">
                     <button type="button" onclick="closeEditProductModal()" class="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition font-medium">ยกเลิก</button>
@@ -677,6 +681,10 @@
                             <div class="mb-8">
                                 <label class="block text-sm font-medium text-gray-700 mb-1.5">หมายเหตุ (Note)</label>
                                 <textarea id="ap_note" rows="3" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition resize-none"></textarea>
+                                <label class="flex items-center gap-2 mt-2.5 cursor-pointer select-none w-max">
+                                    <input type="checkbox" id="ap_is_cancelled" class="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer">
+                                    <span class="text-sm font-bold text-red-700">ยกเลิกใช้อะไหล่ชิ้นนี้</span>
+                                </label>
                             </div>
                             <div class="flex justify-end">
                                 <button type="submit" class="w-full sm:w-auto bg-blue-600 text-white px-8 py-3 rounded-xl shadow-lg shadow-blue-600/30 hover:bg-blue-700 hover:shadow-blue-600/50 transition-all font-medium text-lg">
@@ -815,10 +823,18 @@
                             <input type="text" id="searchEditProduct" onkeyup="renderEditProductTable()" placeholder="พิมพ์รหัส หรือชื่อสินค้า (เว้นวรรคได้)..." class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm transition">
                         </div>
                         
-                        <div class="w-full md:w-auto flex justify-start">
+                        <div class="w-full md:w-auto flex flex-wrap gap-3 justify-start md:justify-end">
                             <label class="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700 select-none bg-red-50/50 hover:bg-red-50 border border-red-100 px-4 py-2.5 rounded-xl transition">
                                 <input type="checkbox" id="showCostToggle" onchange="toggleShowCost(this)" class="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500">
                                 <span class="font-medium text-red-700">แสดงราคาต้นทุนที่หน้าแคตตาล็อก</span>
+                            </label>
+                            <label class="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700 select-none bg-green-50/50 hover:bg-green-50 border border-green-100 px-4 py-2.5 rounded-xl transition">
+                                <input type="checkbox" id="showGuestPriceBToggle" onchange="toggleShowGuestPriceB(this)" class="w-4 h-4 text-green-600 rounded border-gray-300 focus:ring-green-500">
+                                <span class="font-medium text-green-700 font-semibold">เปิดให้ผู้ไม่ล็อกอินดู ราคาตัวแทน</span>
+                            </label>
+                            <label class="flex items-center gap-2.5 cursor-pointer text-sm text-gray-700 select-none bg-orange-50/50 hover:bg-orange-50 border border-orange-100 px-4 py-2.5 rounded-xl transition">
+                                <input type="checkbox" id="showGuestPriceCToggle" onchange="toggleShowGuestPriceC(this)" class="w-4 h-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500">
+                                <span class="font-medium text-orange-700 font-semibold">เปิดให้ผู้ไม่ล็อกอินดู ราคาในเครือ</span>
                             </label>
                         </div>
                     </div>
@@ -837,6 +853,7 @@
                                         <th class="p-4 font-medium text-right text-blue-200">ราคา (กลาง)</th>
                                         <th class="p-4 font-medium text-right text-green-200">ราคา (ตัวแทน)</th>
                                         <th class="p-4 font-medium text-right text-orange-200">ราคา (ในเครือ)</th>
+                                        <th class="p-4 font-medium text-center">ยกเลิกใช้</th>
                                         <th class="p-4 font-medium text-center rounded-tr-lg">จัดการ</th>
                                     </tr>
                                 </thead>
@@ -895,6 +912,8 @@
         
         let db = { products: [], machines: [], mappings: [] };
         let isShowCostInCatalog = false;
+        let isShowPriceBForGuest = false;
+        let isShowPriceCForGuest = false;
         let selectedMappingProducts = new Set();
         let currentSelectedMachineForMapping = '';
 
@@ -1268,6 +1287,19 @@
                     productIds.has(String(m.product_id).trim())
                 );
             }
+            
+            // ซิงค์การตั้งค่าจากเซิร์ฟเวอร์
+            if (db && db.settings) {
+                isShowPriceBForGuest = db.settings.isShowPriceBForGuest === true;
+                isShowPriceCForGuest = db.settings.isShowPriceCForGuest === true;
+                
+                const toggleB = document.getElementById('showGuestPriceBToggle');
+                if (toggleB) toggleB.checked = isShowPriceBForGuest;
+                
+                const toggleC = document.getElementById('showGuestPriceCToggle');
+                if (toggleC) toggleC.checked = isShowPriceCForGuest;
+            }
+
             buildFilters();
             renderCatalog();
             renderMachineTable();
@@ -1380,6 +1412,74 @@
             renderCatalog(); 
         }
 
+        async function toggleShowGuestPriceB(checkboxElement) {
+            isShowPriceBForGuest = checkboxElement.checked;
+            renderCatalog();
+            await saveSettingsToServer();
+        }
+
+        async function toggleShowGuestPriceC(checkboxElement) {
+            isShowPriceCForGuest = checkboxElement.checked;
+            renderCatalog();
+            await saveSettingsToServer();
+        }
+
+        async function saveSettingsToServer() {
+            try {
+                let payload = {
+                    isShowPriceBForGuest: isShowPriceBForGuest,
+                    isShowPriceCForGuest: isShowPriceCForGuest
+                };
+                let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'saveSettings', payload: payload }) });
+                let result = await res.json();
+                if (result.status !== 'success') {
+                    showToast('ไม่สามารถบันทึกการตั้งค่าไปยังเซิร์ฟเวอร์ได้: ' + result.message, 'error');
+                }
+            } catch (err) {
+                showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อบันทึกการตั้งค่า', 'error');
+            }
+        }
+
+        async function toggleProductCancelStatus(id, isChecked) {
+            const p = db.products.find(x => x.id == id);
+            if (!p) return;
+            
+            let newNote = isChecked ? 'ยกเลิกใช้' : '';
+            if (!isChecked && p.note) {
+                newNote = p.note.replace('ยกเลิกใช้', '').trim();
+            } else if (isChecked) {
+                if (p.note && !p.note.includes('ยกเลิกใช้')) {
+                    newNote = (p.note + '\nยกเลิกใช้').trim();
+                } else {
+                    newNote = 'ยกเลิกใช้';
+                }
+            }
+
+            showLoading('กำลังบันทึกสถานะ...');
+            try {
+                let payload = { 
+                    id: p.id, name: p.name, unit: p.unit, 
+                    cost: p.cost, category: p.category, note: newNote, imageBase64: null,
+                    price_a: p.price_a,
+                    price_b: p.price_b,
+                    price_c: p.price_c
+                };
+                let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'editProduct', payload: payload }) });
+                let result = await res.json();
+                if (result.status === 'success') { 
+                    showToast('อัปเดตสถานะสำเร็จ'); 
+                    fetchData(true);
+                } else { 
+                    showToast('เกิดข้อผิดพลาด: ' + result.message, 'error'); 
+                    fetchData(true);
+                }
+            } catch (err) { 
+                showToast('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error'); 
+                fetchData(true);
+            }
+            hideLoading();
+        }
+
         function setCatalogMode(mode) {
             currentCatalogPage = 1;
             currentCatalogMode = mode;
@@ -1439,9 +1539,11 @@
                         
                         <div class="flex flex-wrap gap-3 mt-auto">
                             ${costHtml}
-                            <div class="bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-blue-200 text-sm">${isLoggedIn ? 'กลาง:' : 'ราคา:'} <span class="text-white font-bold ml-1">฿${pA}</span></div>
-                            ${isLoggedIn ? `
+                            <div class="bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-blue-200 text-sm">${(isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'กลาง:' : 'ราคา:'} <span class="text-white font-bold ml-1">฿${pA}</span></div>
+                            ${(isLoggedIn || isShowPriceBForGuest) ? `
                             <div class="bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-green-200 text-sm">ตัวแทน: <span class="text-white font-bold ml-1">฿${pB}</span></div>
+                            ` : ''}
+                            ${(isLoggedIn || isShowPriceCForGuest) ? `
                             <div class="bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-orange-200 text-sm">เครือ: <span class="text-white font-bold ml-1">฿${pC}</span></div>
                             ` : ''}
                         </div>
@@ -1527,23 +1629,32 @@
 
                     let costLineHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr}</span></div>` : '';
 
+                    const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+
                     const noteHtml = p.note ? `
-                                <div class="mb-3 flex items-start gap-1.5 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2">
-                                    <i class="fa-solid fa-note-sticky text-amber-400 text-xs mt-0.5 flex-shrink-0"></i>
-                                    <p class="text-xs text-amber-800 line-clamp-2 leading-relaxed" title="${escapeHTML(p.note)}">${escapeHTML(p.note)}</p>
+                                <div class="mb-3 flex items-start gap-1.5 ${isCancelled ? 'bg-red-50 border border-red-100 text-red-800' : 'bg-amber-50 border border-amber-100 text-amber-800'} rounded-lg px-2.5 py-2">
+                                    <i class="fa-solid ${isCancelled ? 'fa-circle-xmark text-red-500' : 'fa-note-sticky text-amber-400'} text-xs mt-0.5 flex-shrink-0"></i>
+                                    <p class="text-xs ${isCancelled ? 'font-semibold text-red-700' : 'text-amber-800'} line-clamp-2 leading-relaxed" title="${escapeHTML(p.note)}">${escapeHTML(p.note)}</p>
                                 </div>` : '';
 
                     let card = `
-                        <div onclick="openProductDetailModal('${escapeForJS(p.id)}')" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg hover:border-blue-200 transition-all duration-300 group flex flex-col h-full transform hover:-translate-y-1 cursor-pointer">
+                        <div onclick="openProductDetailModal('${escapeForJS(p.id)}')" class="${isCancelled ? 'bg-red-50/20 border-red-200 hover:border-red-300' : 'bg-white border-gray-100 hover:border-blue-200'} rounded-2xl shadow-sm border overflow-hidden hover:shadow-lg transition-all duration-300 group flex flex-col h-full transform hover:-translate-y-1 cursor-pointer">
                             <div class="h-48 sm:h-52 bg-slate-50 overflow-hidden relative flex-shrink-0 flex items-center justify-center">
-                                <img src="${escapeHTML(imgSource)}" alt="${escapeHTML(p.name)}" class="max-w-full max-h-full object-contain p-2 group-hover:scale-105 transition duration-500" onerror="this.src='https://placehold.co/400x300/fee2e2/ef4444?text=Image+Error'">
+                                <img src="${escapeHTML(imgSource)}" alt="${escapeHTML(p.name)}" class="max-w-full max-h-full object-contain p-2 group-hover:scale-105 transition duration-500 ${isCancelled ? 'opacity-50 grayscale-[30%]' : ''}" onerror="this.src='https://placehold.co/400x300/fee2e2/ef4444?text=Image+Error'">
                                 <div class="absolute top-3 left-3 bg-white/90 backdrop-blur px-2.5 py-1 rounded-md text-xs font-bold text-gray-800 shadow-sm border border-gray-100">${escapeHTML(p.id)}</div>
                                 <button class="img-zoom-btn" onclick="event.stopPropagation(); openImageLightbox('${escapeForJS(imgSource)}', '${escapeForJS(p.name)}')">
                                     <i class="fa-solid fa-magnifying-glass-plus"></i> ขยายภาพ
                                 </button>
+                                ${isCancelled ? `
+                                <div class="absolute top-0 right-0 overflow-hidden w-24 h-24 pointer-events-none z-20">
+                                    <div class="absolute bg-red-600 text-white text-[10px] font-bold text-center py-1 w-[140px] top-[22px] -right-[35px] rotate-45 shadow-sm uppercase tracking-wider">
+                                        ยกเลิกใช้
+                                    </div>
+                                </div>
+                                ` : ''}
                             </div>
                             <div class="p-5 flex flex-col flex-1">
-                                <h3 class="text-lg font-bold text-gray-800 mb-1 line-clamp-2 leading-tight group-hover:text-blue-600 transition-colors" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</h3>
+                                <h3 class="text-lg font-bold ${isCancelled ? 'text-gray-400 line-through decoration-red-500 decoration-2' : 'text-gray-800'} mb-1 line-clamp-2 leading-tight group-hover:text-blue-600 transition-colors" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</h3>
                                 <div class="flex flex-wrap gap-2 mb-3">
                                     <span class="text-xs font-medium text-blue-500 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">${escapeHTML(p.category) || 'ไม่ระบุประเภท'}</span>
                                     <span class="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">หน่วย: ${escapeHTML(p.unit) || 'ชิ้น'}</span>
@@ -1551,9 +1662,11 @@
                                 <div class="mb-4">
                                     ${costLineHtml}
                                     <div class="space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
-                                        <div class="flex justify-between items-center text-sm"><span class="text-gray-500">${isLoggedIn ? 'ราคากลาง:' : 'ราคา:'}</span><span class="font-bold text-blue-600 text-base">฿${pA}</span></div>
-                                        ${isLoggedIn ? `
+                                        <div class="flex justify-between items-center text-sm"><span class="text-gray-500">${(isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'ราคากลาง:' : 'ราคา:'}</span><span class="font-bold text-blue-600 text-base">฿${pA}</span></div>
+                                        ${(isLoggedIn || isShowPriceBForGuest) ? `
                                         <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคาตัวแทน:</span><span class="font-bold text-green-600 text-base">฿${pB}</span></div>
+                                        ` : ''}
+                                        ${(isLoggedIn || isShowPriceCForGuest) ? `
                                         <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคาในเครือ:</span><span class="font-bold text-orange-600 text-base">฿${pC}</span></div>
                                         ` : ''}
                                     </div>
@@ -1607,15 +1720,24 @@
 
                     let costLineHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr}</span></div>` : '';
 
+                    const isCancelledM = m.note && (m.note.trim() === 'ยกเลิกใช้' || m.note.includes('ยกเลิกใช้'));
+
                     let card = `
-                        <div onclick="${clickAction}" class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-lg hover:border-purple-300 transition-all duration-300 group flex flex-col h-full transform hover:-translate-y-1 cursor-pointer">
+                        <div onclick="${clickAction}" class="${isCancelledM ? 'bg-red-50/20 border-red-200 hover:border-red-300' : 'bg-white border-gray-200 hover:border-purple-300'} rounded-2xl shadow-sm border overflow-hidden hover:shadow-lg transition-all duration-300 group flex flex-col h-full transform hover:-translate-y-1 cursor-pointer">
                             <div class="h-56 bg-slate-800 overflow-hidden relative flex-shrink-0 flex items-center justify-center p-3">
-                                <img src="${escapeHTML(imgSource)}" alt="${escapeHTML(m.name)}" class="max-w-full max-h-full object-contain group-hover:scale-105 transition duration-500 rounded" onerror="this.src='https://placehold.co/400x300/1e293b/94a3b8?text=Image+Error'">
+                                <img src="${escapeHTML(imgSource)}" alt="${escapeHTML(m.name)}" class="max-w-full max-h-full object-contain group-hover:scale-105 transition duration-500 rounded ${isCancelledM ? 'opacity-40 grayscale-[30%]' : ''}" onerror="this.src='https://placehold.co/400x300/1e293b/94a3b8?text=Image+Error'">
                                 <div class="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent"></div>
                                 <div class="absolute bottom-3 left-4 right-4">
                                     <span class="bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider mb-1 inline-block">Machine</span>
-                                    <h3 class="text-base font-bold text-white line-clamp-2 leading-snug group-hover:text-purple-300 transition-colors">${escapeHTML(m.name)}</h3>
+                                    <h3 class="text-base font-bold text-white line-clamp-2 leading-snug group-hover:text-purple-300 transition-colors ${isCancelledM ? 'line-through decoration-red-500 decoration-2' : ''}">${escapeHTML(m.name)}</h3>
                                 </div>
+                                ${isCancelledM ? `
+                                <div class="absolute top-0 right-0 overflow-hidden w-24 h-24 pointer-events-none z-20">
+                                    <div class="absolute bg-red-600 text-white text-[10px] font-bold text-center py-1 w-[140px] top-[22px] -right-[35px] rotate-45 shadow-sm uppercase tracking-wider">
+                                        ยกเลิกใช้
+                                    </div>
+                                </div>
+                                ` : ''}
                             </div>
                             <div class="p-4 flex flex-col flex-1 bg-white">
                                 <div class="flex items-center justify-between gap-2 mb-2 text-sm text-gray-500">
@@ -1626,15 +1748,22 @@
                                 <div class="mb-4">
                                     ${costLineHtml}
                                     <div class="space-y-1.5 bg-purple-50 p-3 rounded-xl border border-purple-100">
-                                        <div class="flex justify-between items-center text-xs"><span class="text-gray-500">${isLoggedIn ? 'ราคากลาง:' : 'ราคา:'}</span><span class="font-bold text-blue-600">฿${pA}</span></div>
-                                        ${isLoggedIn ? `
+                                        <div class="flex justify-between items-center text-xs"><span class="text-gray-500">${(isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'ราคากลาง:' : 'ราคา:'}</span><span class="font-bold text-blue-600">฿${pA}</span></div>
+                                        ${(isLoggedIn || isShowPriceBForGuest) ? `
                                         <div class="flex justify-between items-center text-xs"><span class="text-gray-500">ราคาตัวแทน:</span><span class="font-bold text-green-600">฿${pB}</span></div>
+                                        ` : ''}
+                                        ${(isLoggedIn || isShowPriceCForGuest) ? `
                                         <div class="flex justify-between items-center text-xs"><span class="text-gray-500">ราคาในเครือ:</span><span class="font-bold text-orange-600">฿${pC}</span></div>
                                         ` : ''}
                                     </div>
                                 </div>
 
-                                <p class="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-4 flex-1">${escapeHTML(m.note || 'ไม่มีรายละเอียดเพิ่มเติม')}</p>
+                                ${m.note ? `
+                                <div class="mb-4 flex items-start gap-1.5 ${isCancelledM ? 'bg-red-50 border border-red-100 text-red-800' : 'bg-slate-50 border border-slate-100 text-gray-500'} rounded-lg px-2.5 py-2">
+                                    <i class="fa-solid ${isCancelledM ? 'fa-circle-xmark text-red-500' : 'fa-circle-info text-slate-400'} text-xs mt-0.5 flex-shrink-0"></i>
+                                    <p class="text-xs ${isCancelledM ? 'font-semibold text-red-700' : 'text-gray-500'} line-clamp-2 leading-relaxed flex-1" title="${escapeHTML(m.note)}">${escapeHTML(m.note)}</p>
+                                </div>
+                                ` : '<p class="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-4 flex-1">ไม่มีรายละเอียดเพิ่มเติม</p>'}
                                 <div class="mt-auto flex justify-between items-center pt-3 border-t border-gray-100">
                                     <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-md group-hover:bg-purple-600 group-hover:text-white transition-colors">
                                         คลิกเพื่อดูอะไหล่ <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i>
@@ -1803,12 +1932,23 @@
             document.getElementById('mdm_id').innerText = m.id;
             document.getElementById('mdm_name').innerText = m.name;
             document.getElementById('mdm_unit').innerText = 'หน่วย: ' + (m.unit || 'เครื่อง');
-            document.getElementById('mdm_note').innerText = m.note || 'ไม่มีรายละเอียดเพิ่มเติม';
+            
+            const mdmNoteEl = document.getElementById('mdm_note');
+            mdmNoteEl.innerText = m.note || 'ไม่มีรายละเอียดเพิ่มเติม';
+            
+            const isCancelledM = m.note && (m.note.trim() === 'ยกเลิกใช้' || m.note.includes('ยกเลิกใช้'));
+            if (isCancelledM) {
+                mdmNoteEl.className = "text-red-700 font-semibold text-sm whitespace-pre-line leading-relaxed bg-red-50 border border-red-200 rounded-xl p-4";
+                document.getElementById('mdm_name').className = "text-2xl sm:text-3xl font-extrabold text-gray-400 line-through decoration-red-500 decoration-2 leading-snug";
+            } else {
+                mdmNoteEl.className = "text-gray-700 text-sm whitespace-pre-line leading-relaxed bg-gray-50 border border-gray-100 rounded-xl p-4";
+                document.getElementById('mdm_name').className = "text-2xl sm:text-3xl font-extrabold text-gray-900 leading-snug";
+            }
             document.getElementById('mdm_image').src = m.image_url || 'https://placehold.co/800x500/1e293b/94a3b8?text=No+Image';
 
             const costVal = parseFloat(String(m.cost).replace(/,/g, '')) || 0;
             document.getElementById('mdm_cost').innerText = '฿' + costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('mdm_price_a_label').innerText = isLoggedIn ? 'ราคากลาง' : 'ราคา';
+            document.getElementById('mdm_price_a_label').innerText = (isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'ราคากลาง' : 'ราคา';
             document.getElementById('mdm_price_a').innerText = '฿' + fNumberM(m.price_a, costVal * 2.1);
             document.getElementById('mdm_price_b').innerText = '฿' + fNumberM(m.price_b, costVal * 1.7);
             document.getElementById('mdm_price_c').innerText = '฿' + fNumberM(m.price_c, costVal * 1.3);
@@ -1816,11 +1956,15 @@
             if (isShowCostInCatalog && isLoggedIn) document.getElementById('mdm_cost_box').classList.remove('hidden');
             else document.getElementById('mdm_cost_box').classList.add('hidden');
 
-            if (isLoggedIn) {
+            if (isLoggedIn || isShowPriceBForGuest) {
                 document.getElementById('mdm_price_b_box').classList.remove('hidden');
-                document.getElementById('mdm_price_c_box').classList.remove('hidden');
             } else {
                 document.getElementById('mdm_price_b_box').classList.add('hidden');
+            }
+
+            if (isLoggedIn || isShowPriceCForGuest) {
+                document.getElementById('mdm_price_c_box').classList.remove('hidden');
+            } else {
                 document.getElementById('mdm_price_c_box').classList.add('hidden');
             }
 
@@ -1850,12 +1994,23 @@
             document.getElementById('pd_name').innerText = p.name;
             document.getElementById('pd_category').innerText = p.category || 'ไม่ระบุ';
             document.getElementById('pd_unit').innerText = 'หน่วย: ' + (p.unit || 'ชิ้น');
-            document.getElementById('pd_note').innerText = p.note || '-';
+            
+            const pdNoteEl = document.getElementById('pd_note');
+            pdNoteEl.innerText = p.note || '-';
+            
+            const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+            if (isCancelled) {
+                pdNoteEl.className = "text-red-700 font-semibold text-sm whitespace-pre-line leading-relaxed bg-red-50 border border-red-200 rounded-xl p-4";
+                document.getElementById('pd_name').className = "text-2xl sm:text-3xl font-extrabold text-gray-400 line-through decoration-red-500 decoration-2 leading-snug";
+            } else {
+                pdNoteEl.className = "text-gray-700 text-sm whitespace-pre-line leading-relaxed bg-gray-50 border border-gray-100 rounded-xl p-4";
+                document.getElementById('pd_name').className = "text-2xl sm:text-3xl font-extrabold text-gray-900 leading-snug";
+            }
             document.getElementById('pd_image').src = p.image_url || 'https://placehold.co/400x300/f8fafc/94a3b8?text=No+Image';
             
             const costVal = parseFloat(String(p.cost).replace(/,/g, '')) || 0;
             document.getElementById('pd_cost').innerText = '฿' + costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            document.getElementById('pd_price_a_label').innerText = isLoggedIn ? 'ราคากลาง' : 'ราคา';
+            document.getElementById('pd_price_a_label').innerText = (isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'ราคากลาง' : 'ราคา';
             document.getElementById('pd_price_a').innerText = '฿' + fNumber(p.price_a, costVal * 2.1);
             document.getElementById('pd_price_b').innerText = '฿' + fNumber(p.price_b, costVal * 1.7);
             document.getElementById('pd_price_c').innerText = '฿' + fNumber(p.price_c, costVal * 1.3);
@@ -1863,11 +2018,15 @@
             if(isShowCostInCatalog && isLoggedIn) document.getElementById('pd_cost_box').classList.remove('hidden');
             else document.getElementById('pd_cost_box').classList.add('hidden');
 
-            if (isLoggedIn) {
+            if (isLoggedIn || isShowPriceBForGuest) {
                 document.getElementById('pd_price_b_box').classList.remove('hidden');
-                document.getElementById('pd_price_c_box').classList.remove('hidden');
             } else {
                 document.getElementById('pd_price_b_box').classList.add('hidden');
+            }
+
+            if (isLoggedIn || isShowPriceCForGuest) {
+                document.getElementById('pd_price_c_box').classList.remove('hidden');
+            } else {
                 document.getElementById('pd_price_c_box').classList.add('hidden');
             }
 
@@ -1945,10 +2104,21 @@
             let base64 = null;
             if (document.getElementById('ap_image').files.length > 0) base64 = await getBase64(document.getElementById('ap_image').files[0]);
 
+            let noteVal = document.getElementById('ap_note').value;
+            if (document.getElementById('ap_is_cancelled').checked) {
+                if (noteVal) {
+                    if (!noteVal.includes('ยกเลิกใช้')) {
+                        noteVal = (noteVal + '\nยกเลิกใช้').trim();
+                    }
+                } else {
+                    noteVal = 'ยกเลิกใช้';
+                }
+            }
+
             let payload = { 
                 id: id, name: document.getElementById('ap_name').value, unit: document.getElementById('ap_unit').value, 
                 cost: document.getElementById('ap_cost').value, category: document.getElementById('ap_cat').value, 
-                note: document.getElementById('ap_note').value, imageBase64: base64,
+                note: noteVal, imageBase64: base64,
                 price_a: document.getElementById('ap_price_a').value,
                 price_b: document.getElementById('ap_price_b').value,
                 price_c: document.getElementById('ap_price_c').value
@@ -1974,6 +2144,10 @@
             document.getElementById('ep_price_b').value = p.price_b || '';
             document.getElementById('ep_price_c').value = p.price_c || '';
             document.getElementById('ep_note').value = p.note || ''; document.getElementById('ep_image').value = ''; 
+            
+            const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+            document.getElementById('ep_is_cancelled').checked = isCancelled;
+
             document.getElementById('editProductModal').classList.remove('hidden');
         }
 
@@ -1984,9 +2158,24 @@
             let base64 = null;
             if (document.getElementById('ep_image').files.length > 0) base64 = await getBase64(document.getElementById('ep_image').files[0]);
 
+            let noteVal = document.getElementById('ep_note').value;
+            if (document.getElementById('ep_is_cancelled').checked) {
+                if (noteVal) {
+                    if (!noteVal.includes('ยกเลิกใช้')) {
+                        noteVal = (noteVal + '\nยกเลิกใช้').trim();
+                    }
+                } else {
+                    noteVal = 'ยกเลิกใช้';
+                }
+            } else {
+                if (noteVal) {
+                    noteVal = noteVal.replace('ยกเลิกใช้', '').trim();
+                }
+            }
+
             let payload = { 
                 id: document.getElementById('ep_id').value, name: document.getElementById('ep_name').value, unit: document.getElementById('ep_unit').value, 
-                cost: document.getElementById('ep_cost').value, category: document.getElementById('ep_cat').value, note: document.getElementById('ep_note').value, imageBase64: base64,
+                cost: document.getElementById('ep_cost').value, category: document.getElementById('ep_cat').value, note: noteVal, imageBase64: base64,
                 price_a: document.getElementById('ep_price_a').value,
                 price_b: document.getElementById('ep_price_b').value,
                 price_c: document.getElementById('ep_price_c').value
@@ -2366,17 +2555,25 @@
                 const pA = fNumber(p.price_a, costVal * 2.1);
                 const pB = fNumber(p.price_b, costVal * 1.7);
                 const pC = fNumber(p.price_c, costVal * 1.3);
+                
+                const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+
                 let tr = `
-                    <tr class="hover:bg-blue-50/30 border-b border-gray-200 transition">
+                    <tr class="hover:bg-blue-50/30 border-b border-gray-200 transition ${isCancelled ? 'bg-red-50/10' : ''}">
                         <td class="p-4 text-center text-gray-500">${index + 1}</td>
-                        <td class="p-3"><img src="${escapeHTML(p.image_url || 'https://placehold.co/100x100?text=NoImg')}" class="w-12 h-12 object-cover rounded-lg shadow-sm border border-gray-200 bg-white" onerror="this.src='https://placehold.co/100x100?text=Err'"></td>
-                        <td class="p-4 font-semibold text-gray-800">${escapeHTML(p.id)}</td>
-                        <td class="p-4 text-gray-700 max-w-xs truncate" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</td>
+                        <td class="p-3"><img src="${escapeHTML(p.image_url || 'https://placehold.co/100x100?text=NoImg')}" class="w-12 h-12 object-cover rounded-lg shadow-sm border border-gray-200 bg-white ${isCancelled ? 'opacity-50 grayscale' : ''}" onerror="this.src='https://placehold.co/100x100?text=Err'"></td>
+                        <td class="p-4 font-semibold ${isCancelled ? 'text-gray-400 line-through decoration-red-500' : 'text-gray-800'}">${escapeHTML(p.id)}</td>
+                        <td class="p-4 ${isCancelled ? 'text-gray-400 line-through decoration-red-500' : 'text-gray-700'} max-w-xs truncate" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</td>
                         <td class="p-4 text-gray-600">${escapeHTML(p.unit || '-')}</td>
                         <td class="p-4 text-red-600 font-medium text-right">${costStr}</td>
                         <td class="p-4 text-blue-600 font-bold text-right">${pA}</td>
                         <td class="p-4 text-green-600 font-bold text-right">${pB}</td>
                         <td class="p-4 text-orange-600 font-bold text-right">${pC}</td>
+                        <td class="p-4 text-center">
+                            <label class="inline-flex items-center cursor-pointer select-none">
+                                <input type="checkbox" ${isCancelled ? 'checked' : ''} onchange="toggleProductCancelStatus('${escapeForJS(p.id)}', this.checked)" class="w-5 h-5 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer transition-all">
+                            </label>
+                        </td>
                         <td class="p-4 text-center">
                             <div class="flex items-center justify-center gap-2">
                                 <button onclick="openEditProductModal('${escapeForJS(p.id)}')" class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3 py-2 rounded-lg text-xs font-medium transition shadow-sm inline-flex items-center" title="แก้ไขข้อมูล"><i class="fa-solid fa-edit"></i> <span class="hidden xl:inline ml-1.5">แก้ไข</span></button>
