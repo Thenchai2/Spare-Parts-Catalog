@@ -1278,6 +1278,26 @@
         }
 
         function updateAllViews() {
+            // จัดเรียงรายการยกเลิกใช้ไปไว้ด้านล่างสุด
+            if (db && Array.isArray(db.products)) {
+                db.products.sort((a, b) => {
+                    const aCancelled = a.note && (a.note.trim() === 'ยกเลิกใช้' || a.note.includes('ยกเลิกใช้'));
+                    const bCancelled = b.note && (b.note.trim() === 'ยกเลิกใช้' || b.note.includes('ยกเลิกใช้'));
+                    if (aCancelled && !bCancelled) return 1;
+                    if (!aCancelled && bCancelled) return -1;
+                    return 0;
+                });
+            }
+            if (db && Array.isArray(db.machines)) {
+                db.machines.sort((a, b) => {
+                    const aCancelled = a.note && (a.note.trim() === 'ยกเลิกใช้' || a.note.includes('ยกเลิกใช้'));
+                    const bCancelled = b.note && (b.note.trim() === 'ยกเลิกใช้' || b.note.includes('ยกเลิกใช้'));
+                    if (aCancelled && !bCancelled) return 1;
+                    if (!aCancelled && bCancelled) return -1;
+                    return 0;
+                });
+            }
+
             // กรองเอาเฉพาะ mapping ที่มีเครื่องจักรและสินค้าอยู่จริงในระบบ ป้องกันข้อมูลไม่ตรงกันหลังการลบ
             if (db && Array.isArray(db.mappings)) {
                 const machineIds = new Set(db.machines.map(m => String(m.id).trim()));
