@@ -1839,10 +1839,246 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             renderRestockTable();
         }
 
+        // ===== Restock Pagination & Bulk Adjustment State =====
+        let isBulkAdjusting = false;
+        let bulkStockChanges = {};
+        let restockCurrentPage = 1;
+
+        function onRestockSearchChange() {
+            restockCurrentPage = 1;
+            renderRestockTable();
+        }
+
+        function changeRestockPage(page) {
+            restockCurrentPage = page;
+            renderRestockTable();
+            const viewSection = document.getElementById('view-restock');
+            if (viewSection) {
+                viewSection.scrollTop = 0;
+            }
+        }
+
+        function toggleBulkAdjustMode() {
+            isBulkAdjusting = true;
+            bulkStockChanges = {};
+            const btnBulk = document.getElementById('btnBulkAdjustStock');
+            const bulkActions = document.getElementById('bulkAdjustActions');
+            const bulkBanner = document.getElementById('bulkAdjustBanner');
+            if (btnBulk) btnBulk.classList.add('hidden');
+            if (bulkActions) bulkActions.classList.remove('hidden');
+            if (bulkBanner) bulkBanner.classList.remove('hidden');
+            updateBulkChangeCountBadge();
+            renderRestockTable();
+        }
+
+        function cancelBulkAdjustMode() {
+            isBulkAdjusting = false;
+            bulkStockChanges = {};
+            const btnBulk = document.getElementById('btnBulkAdjustStock');
+            const bulkActions = document.getElementById('bulkAdjustActions');
+            const bulkBanner = document.getElementById('bulkAdjustBanner');
+            if (btnBulk) btnBulk.classList.remove('hidden');
+            if (bulkActions) bulkActions.classList.add('hidden');
+            if (bulkBanner) bulkBanner.classList.add('hidden');
+            renderRestockTable();
+        }
+
+        function onBulkStockInputChange(pId, val) {
+            const p = db.products.find(x => x.id == pId);
+            if (!p) return;
+            const numVal = parseFloat(val);
+            const currentStock = parseFloat(p.stock_qty) || 0;
+            
+            if (!isNaN(numVal) && numVal >= 0 && numVal !== currentStock) {
+                bulkStockChanges[pId] = numVal;
+            } else {
+                delete bulkStockChanges[pId];
+            }
+            updateBulkChangeCountBadge();
+        }
+
+        function updateBulkChangeCountBadge() {
+            const badge = document.getElementById('bulkChangeCountBadge');
+            if (badge) {
+                const count = Object.keys(bulkStockChanges).length;
+                badge.innerText = `แก้ไขแล้ว ${count} รายการ`;
+                if (count > 0) {
+                    badge.className = "px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold text-xs flex-shrink-0 ml-2 shadow-sm animate-pulse";
+                } else {
+                    badge.className = "px-3 py-1 bg-amber-200 text-amber-900 rounded-lg font-bold text-xs flex-shrink-0 ml-2";
+                }
+            }
+        }
+
+        async function saveBulkAdjustStock() {
+            const changedProductIds = Object.keys(bulkStockChanges);
+            if (changedProductIds.length === 0) {
+                showToast('ไม่มีการเปลี่ยนแปลงจำนวนสต็อก', 'info');
+                cancelBulkAdjustMode();
+                return;
+            }
+
+            const itemsToUpdate = [];
+            changedProductIds.forEach(pId => {
+                const p = db.products.find(x => x.id == pId);
+                if (p) {
+                    const newQty = parseFloat(bulkStockChanges[pId]);
+                    const currentQty = parseFloat(p.stock_qty) || 0;
+                    if (!isNaN(newQty) && newQty >= 0 && newQty !== currentQty) {
+                        itemsToUpdate.push({
+                            product: p,
+                            newQty: newQty,
+                            currentQty: currentQty,
+                            diff: newQty - currentQty
+                        });
+                    }
+                }
+            });
+
+            if (itemsToUpdate.length === 0) {
+                showToast('ไม่มีการเปลี่ยนแปลงจำนวนสต็อกที่ถูกต้อง', 'info');
+                cancelBulkAdjustMode();
+                return;
+            }
+
+            const confirmMsg = `ต้องการบันทึกการปรับยอดสต็อกอะไหล่จำนวน ${itemsToUpdate.length} รายการ ใช่หรือไม่?`;
+            if (!confirm(confirmMsg)) return;
+
+            const operator = (isLoggedIn && currentUser && currentUser.fullName) ? currentUser.fullName : 'สโตร์';
+
+            showLoading(`กำลังบันทึกการปรับยอดสต็อก (0/${itemsToUpdate.length})...`);
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (let i = 0; i < itemsToUpdate.length; i++) {
+                const item = itemsToUpdate[i];
+                showLoading(`กำลังบันทึกการปรับยอดสต็อก (${i + 1}/${itemsToUpdate.length})...`);
+
+                const payload = {
+                    id: item.product.id,
+                    qty: item.diff,
+                    requester: operator,
+                    department: "สโตร์ (ปรับสต็อกหลายรายการ)",
+                    note: `ปรับยอดสต็อกอะไหล่หลายรายการ (จาก ${item.currentQty} เป็น ${item.newQty})`
+                };
+
+                try {
+                    let res = await fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'restockProduct', payload: payload })
+                    });
+                    let result = await res.json();
+                    if (result.status === 'success') {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    failCount++;
+                }
+            }
+
+            hideLoading();
+
+            if (successCount > 0) {
+                showToast(`บันทึกการปรับปรุงสต็อกสำเร็จ ${successCount} รายการ ${failCount > 0 ? `(ล้มเหลว ${failCount} รายการ)` : ''}`, failCount > 0 ? 'warning' : 'success');
+                await fetchData(false);
+            } else {
+                showToast('เกิดข้อผิดพลาด ไม่สามารถปรับปรุงสต็อกได้', 'error');
+            }
+
+            isBulkAdjusting = false;
+            bulkStockChanges = {};
+            const btnBulk = document.getElementById('btnBulkAdjustStock');
+            const bulkActions = document.getElementById('bulkAdjustActions');
+            const bulkBanner = document.getElementById('bulkAdjustBanner');
+            if (btnBulk) btnBulk.classList.remove('hidden');
+            if (bulkActions) bulkActions.classList.add('hidden');
+            if (bulkBanner) bulkBanner.classList.add('hidden');
+            renderRestockTable();
+        }
+
+        function renderRestockPagination(totalItems, currentPage, totalPages) {
+            const infoEl = document.getElementById('restockPaginationInfo');
+            const controlsEl = document.getElementById('restockPaginationControls');
+            if (!infoEl || !controlsEl) return;
+
+            if (totalItems === 0) {
+                infoEl.innerText = "ไม่พบรายการอะไหล่";
+                controlsEl.innerHTML = '';
+                return;
+            }
+
+            const pageSize = 20;
+            const startItem = (currentPage - 1) * pageSize + 1;
+            const endItem = Math.min(currentPage * pageSize, totalItems);
+            infoEl.innerHTML = `แสดง <span class="font-bold text-slate-800">${startItem} - ${endItem}</span> จากทั้งหมด <span class="font-bold text-slate-800">${totalItems}</span> รายการ (หน้า <span class="font-bold text-blue-600">${currentPage}</span> / ${totalPages})`;
+
+            let buttonsHtml = '';
+
+            // First page <<
+            buttonsHtml += `
+                <button onclick="changeRestockPage(1)" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าแรก">
+                    <i class="fa-solid fa-angles-left"></i>
+                </button>
+            `;
+
+            // Prev page <
+            buttonsHtml += `
+                <button onclick="changeRestockPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าก่อนหน้า">
+                    <i class="fa-solid fa-angle-left mr-1"></i> ก่อนหน้า
+                </button>
+            `;
+
+            // Page numbers
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, currentPage + 2);
+
+            if (startPage > 1) {
+                buttonsHtml += `<button onclick="changeRestockPage(1)" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">1</button>`;
+                if (startPage > 2) {
+                    buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+                }
+            }
+
+            for (let p = startPage; p <= endPage; p++) {
+                if (p === currentPage) {
+                    buttonsHtml += `<button class="px-3.5 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-extrabold shadow-md shadow-blue-500/20 cursor-default">${p}</button>`;
+                } else {
+                    buttonsHtml += `<button onclick="changeRestockPage(${p})" class="px-3.5 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm">${p}</button>`;
+                }
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+                }
+                buttonsHtml += `<button onclick="changeRestockPage(${totalPages})" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">${totalPages}</button>`;
+            }
+
+            // Next page >
+            buttonsHtml += `
+                <button onclick="changeRestockPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าถัดไป">
+                    ถัดไป <i class="fa-solid fa-angle-right ml-1"></i>
+                </button>
+            `;
+
+            // Last page >>
+            buttonsHtml += `
+                <button onclick="changeRestockPage(${totalPages})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าสุดท้าย">
+                    <i class="fa-solid fa-angles-right"></i>
+                </button>
+            `;
+
+            controlsEl.innerHTML = buttonsHtml;
+        }
+
         function renderRestockTable() {
             const tbody = document.getElementById('restockTableBody');
             if (!tbody) return;
-            const searchKeywordString = document.getElementById('searchRestockProduct').value.toLowerCase();
+            const searchKeywordString = document.getElementById('searchRestockProduct')?.value.toLowerCase() || '';
             const searchKeywords = searchKeywordString.split(/\s+/).filter(k => k.length > 0);
             tbody.innerHTML = '';
 
@@ -1853,27 +2089,61 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     return searchKeywords.every(kw => textToSearch.includes(kw));
                 });
             }
-            if (filteredProducts.length === 0) { 
-                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-gray-500">ไม่พบรายการอะไหล่ที่ค้นหา</td></tr>`; 
+
+            const totalItems = filteredProducts.length;
+            const pageSize = 20;
+            const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+            if (restockCurrentPage > totalPages) restockCurrentPage = totalPages;
+            if (restockCurrentPage < 1) restockCurrentPage = 1;
+
+            renderRestockPagination(totalItems, restockCurrentPage, totalPages);
+
+            if (totalItems === 0) { 
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-gray-500 font-medium">ไม่พบรายการอะไหล่ที่ค้นหา</td></tr>`; 
                 return; 
             }
 
-            filteredProducts.forEach((p, index) => {
+            const startIndex = (restockCurrentPage - 1) * pageSize;
+            const pagedProducts = filteredProducts.slice(startIndex, startIndex + pageSize);
+
+            pagedProducts.forEach((p, index) => {
                 const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+                const itemIndex = startIndex + index + 1;
+
+                let stockCellHtml = '';
+                if (isBulkAdjusting) {
+                    const currentStockVal = (bulkStockChanges[p.id] !== undefined) ? bulkStockChanges[p.id] : (p.stock_qty || 0);
+                    const isEdited = (bulkStockChanges[p.id] !== undefined);
+                    stockCellHtml = `
+                        <div class="flex items-center justify-center">
+                            <input type="number" 
+                                   min="0" 
+                                   step="1"
+                                   value="${currentStockVal}" 
+                                   oninput="onBulkStockInputChange('${escapeForJS(p.id)}', this.value)"
+                                   onchange="onBulkStockInputChange('${escapeForJS(p.id)}', this.value)"
+                                   class="w-28 text-center border-2 ${isEdited ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-200 font-black' : 'border-blue-400 bg-blue-50/50 text-blue-700 font-bold'} focus:border-blue-600 focus:bg-white rounded-xl py-1.5 px-2 text-base shadow-inner focus:outline-none transition" 
+                                   placeholder="0">
+                        </div>
+                    `;
+                } else {
+                    stockCellHtml = `<span class="font-extrabold text-blue-600 text-base">${p.stock_qty || 0}</span>`;
+                }
 
                 let tr = `
-                    <tr class="hover:bg-blue-50/30 border-b border-gray-200 transition ${isCancelled ? 'bg-red-50/10' : ''}">
-                        <td class="p-4 text-center text-gray-500">${index + 1}</td>
+                    <tr class="hover:bg-blue-50/30 border-b border-gray-200 transition ${isCancelled ? 'bg-red-50/10' : ''} ${bulkStockChanges[p.id] !== undefined ? 'bg-emerald-50/30' : ''}">
+                        <td class="p-4 text-center text-gray-500 font-medium">${itemIndex}</td>
                         <td class="p-3"><img src="${escapeHTML(p.image_url || 'https://placehold.co/100x100?text=NoImg')}" class="w-12 h-12 object-cover rounded-lg shadow-sm border border-gray-200 bg-white ${isCancelled ? 'opacity-50 grayscale' : ''}" onerror="this.src='https://placehold.co/100x100?text=Err'"></td>
                         <td class="p-4 font-semibold ${isCancelled ? 'text-gray-400 line-through decoration-red-500' : 'text-gray-800'}">${escapeHTML(p.id)}</td>
                         <td class="p-4 ${isCancelled ? 'text-gray-400 line-through decoration-red-500' : 'text-gray-700'} max-w-xs truncate" title="${escapeHTML(p.name)}">${escapeHTML(p.name)}</td>
                         <td class="p-4 text-gray-500">${escapeHTML(p.category || 'ทั่วไป')}</td>
                         <td class="p-4 text-gray-600">${escapeHTML(p.unit || '-')}</td>
-                        <td class="p-4 text-center font-extrabold text-blue-600 text-base">${p.stock_qty || 0}</td>
+                        <td class="p-4 text-center">${stockCellHtml}</td>
                         <td class="p-4 text-center">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="openAdjustStockModal('${escapeForJS(p.id)}')" class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3 py-2 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center" title="ปรับสต็อก"><i class="fa-solid fa-sliders mr-1"></i> ปรับสต็อก</button>
-                                <button onclick="generateQRCodeModal('${escapeForJS(p.id)}')" class="text-sky-600 hover:text-white bg-sky-50 hover:bg-sky-600 px-3 py-2 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center" title="สร้าง QR Code"><i class="fa-solid fa-qrcode mr-1"></i> QR Code</button>
+                                <button onclick="openAdjustStockModal('${escapeForJS(p.id)}')" ${isBulkAdjusting ? 'disabled class="opacity-40 cursor-not-allowed text-blue-600 bg-blue-50 px-3 py-2 rounded-lg text-xs font-semibold"' : 'class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3 py-2 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center"'} title="ปรับสต็อก"><i class="fa-solid fa-sliders mr-1"></i> ปรับสต็อก</button>
+                                <button onclick="generateQRCodeModal('${escapeForJS(p.id)}')" ${isBulkAdjusting ? 'disabled class="opacity-40 cursor-not-allowed text-sky-600 bg-sky-50 px-3 py-2 rounded-lg text-xs font-semibold"' : 'class="text-sky-600 hover:text-white bg-sky-50 hover:bg-sky-600 px-3 py-2 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center"'} title="สร้าง QR Code"><i class="fa-solid fa-qrcode mr-1"></i> QR Code</button>
                             </div>
                         </td>
                     </tr>
@@ -3959,6 +4229,51 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
         }
 
         // ===== QR Code Generator Client Logic =====
+        function toggleQRKeepAspect() {
+            const keep = document.getElementById('qrKeepAspect').checked;
+            if (keep) {
+                const wInput = document.getElementById('qrWidthCm');
+                const hInput = document.getElementById('qrHeightCm');
+                if (wInput && hInput) {
+                    hInput.value = wInput.value;
+                }
+            }
+        }
+
+        function onQRWidthChange() {
+            const keepCheck = document.getElementById('qrKeepAspect');
+            if (keepCheck && keepCheck.checked) {
+                const wInput = document.getElementById('qrWidthCm');
+                const hInput = document.getElementById('qrHeightCm');
+                if (wInput && hInput) {
+                    hInput.value = wInput.value;
+                }
+            }
+        }
+
+        function onQRHeightChange() {
+            const keepCheck = document.getElementById('qrKeepAspect');
+            if (keepCheck && keepCheck.checked) {
+                const wInput = document.getElementById('qrWidthCm');
+                const hInput = document.getElementById('qrHeightCm');
+                if (wInput && hInput) {
+                    wInput.value = hInput.value;
+                }
+            }
+        }
+
+        function setQRSizePreset(w, h) {
+            const wInput = document.getElementById('qrWidthCm');
+            const hInput = document.getElementById('qrHeightCm');
+            const keepCheck = document.getElementById('qrKeepAspect');
+
+            if (wInput) wInput.value = w;
+            if (hInput) hInput.value = h;
+            if (keepCheck) {
+                keepCheck.checked = (w === h);
+            }
+        }
+
         function generateQRCodeModal(id) {
             const p = db.products.find(x => x.id == id);
             if (!p) return;
@@ -3973,7 +4288,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             new QRious({
                 element: canvas,
                 value: String(p.id),
-                size: 250,
+                size: 300,
                 level: 'H'
             });
             
@@ -4004,8 +4319,11 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             const pId = document.getElementById('qrProductCode').innerText;
             const pName = document.getElementById('qrProductName').innerText;
             const imgUrl = canvas.toDataURL("image/png");
+
+            const wCm = parseFloat(document.getElementById('qrWidthCm')?.value) || 5;
+            const hCm = parseFloat(document.getElementById('qrHeightCm')?.value) || 5;
             
-            const printWindow = window.open('', '_blank', 'width=450,height=450');
+            const printWindow = window.open('', '_blank', 'width=600,height=600');
             if (!printWindow) {
                 showToast('กรุณาอนุญาตป็อปอัปในเบราว์เซอร์ก่อน', 'error');
                 return;
@@ -4013,46 +4331,71 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             
             const doc = printWindow.document;
             doc.write(`
+                <!DOCTYPE html>
                 <html>
                 <head>
                     <title>Print QR Code - ${pId}</title>
                     <style>
-                        body {
+                        @page {
+                            size: ${wCm}cm ${hCm}cm;
                             margin: 0;
-                            padding: 20px;
-                            font-family: sans-serif;
+                        }
+                        * {
+                            box-sizing: border-box;
+                        }
+                        html, body {
+                            margin: 0;
+                            padding: 0;
+                            width: ${wCm}cm;
+                            height: ${hCm}cm;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background: #fff;
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+                        }
+                        .label-container {
+                            width: ${wCm}cm;
+                            height: ${hCm}cm;
+                            padding: 0.3cm;
                             display: flex;
                             flex-direction: column;
                             align-items: center;
                             justify-content: center;
-                            height: 100vh;
-                            box-sizing: border-box;
                             text-align: center;
+                            overflow: hidden;
+                            box-sizing: border-box;
                         }
-                        img {
-                            width: 250px;
-                            height: 250px;
+                        .qr-img {
+                            max-width: 100%;
+                            max-height: calc(100% - 1.2cm);
+                            object-fit: contain;
                         }
                         .code {
-                            font-size: 20px;
-                            font-weight: bold;
-                            margin-top: 15px;
-                            letter-spacing: 1px;
+                            font-size: ${Math.min(18, Math.max(10, Math.round(wCm * 2.5)))}px;
+                            font-weight: 800;
+                            margin-top: 4px;
+                            letter-spacing: 0.5px;
                             font-family: monospace;
+                            color: #0f172a;
+                            line-height: 1.1;
                         }
                         .name {
-                            font-size: 14px;
-                            color: #555;
-                            margin-top: 5px;
-                            max-width: 280px;
+                            font-size: ${Math.min(12, Math.max(8, Math.round(wCm * 1.6)))}px;
+                            color: #64748b;
+                            margin-top: 2px;
+                            max-width: 100%;
                             word-wrap: break-word;
+                            line-height: 1.2;
                         }
                     </style>
                 </head>
                 <body>
-                    <img src="${imgUrl}" />
-                    <div class="code">${pId}</div>
-                    <div class="name">${pName}</div>
+                    <div class="label-container">
+                        <img class="qr-img" src="${imgUrl}" />
+                        <div class="code">${pId}</div>
+                        <div class="name">${pName}</div>
+                    </div>
                     <script>
                         window.onload = function() {
                             window.print();
@@ -4067,39 +4410,44 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
 
         // ===== Restock & Adjustment Excel Client Logic =====
         function exportRestockToExcel() {
-            const tbody = document.getElementById('restockTableBody');
-            if (!tbody) return;
-            const rows = tbody.querySelectorAll('tr');
-            
+            const searchKeywordString = document.getElementById('searchRestockProduct')?.value.toLowerCase() || '';
+            const searchKeywords = searchKeywordString.split(/\s+/).filter(k => k.length > 0);
+
+            let filteredProducts = db.products || [];
+            if (searchKeywords.length > 0) {
+                filteredProducts = filteredProducts.filter(p => {
+                    const textToSearch = `${p.id} ${p.name} ${p.category || ''}`.toLowerCase();
+                    return searchKeywords.every(kw => textToSearch.includes(kw));
+                });
+            }
+
+            if (!filteredProducts || filteredProducts.length === 0) {
+                showToast('ไม่มีข้อมูลสำหรับส่งออก', 'error');
+                return;
+            }
+
             let csvContent = "\uFEFF"; // UTF-8 BOM
-            // Headers
-            csvContent += "ลำดับ,รหัสสินค้า,ชื่อสินค้า,สต็อกปัจจุบัน,หน่วยนับ\r\n";
-            
-            rows.forEach((row, index) => {
-                const cols = row.querySelectorAll('td');
-                if (cols.length < 7) return; // Skip empty rows
-                
-                const no = cols[0].innerText.trim();
-                let productId = cols[2].innerText.trim().replace(/"/g, '""');
-                let productName = cols[3].innerText.trim().replace(/"/g, '""');
-                let unit = cols[5].innerText.trim().replace(/"/g, '""');
-                let currentStock = cols[6].innerText.trim().replace(/"/g, '""');
-                
-                // Prevent scientific notation for Product ID
-                productId = `="${productId}"`;
-                
-                // Wrap in quotes
+            csvContent += "ลำดับ,รหัสสินค้า,ชื่อสินค้า,หมวดหมู่,หน่วยนับ,สต็อกปัจจุบัน\r\n";
+
+            filteredProducts.forEach((p, index) => {
+                let productId = `="${String(p.id).replace(/"/g, '""')}"`;
+                let productName = String(p.name || '').replace(/"/g, '""');
+                let category = String(p.category || 'ทั่วไป').replace(/"/g, '""');
+                let unit = String(p.unit || '-').replace(/"/g, '""');
+                let stockQty = p.stock_qty || 0;
+
                 if (productName.includes(',') || productName.includes('\n')) productName = `"${productName}"`;
+                if (category.includes(',') || category.includes('\n')) category = `"${category}"`;
                 if (unit.includes(',') || unit.includes('\n')) unit = `"${unit}"`;
-                
-                csvContent += `${no},${productId},${productName},${currentStock},${unit}\r\n`;
+
+                csvContent += `${index + 1},${productId},${productName},${category},${unit},${stockQty}\r\n`;
             });
-            
+
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             const url = URL.createObjectURL(blob);
             link.setAttribute("href", url);
-            
+
             const dateStr = new Date().toLocaleDateString('th-TH').replace(/\//g, '-');
             link.setAttribute("download", `รายการอะไหล่และยอดคงเหลือ_${dateStr}.csv`);
             link.style.visibility = 'hidden';

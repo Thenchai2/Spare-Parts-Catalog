@@ -654,8 +654,19 @@
                             <h2 class="text-2xl sm:text-3xl font-bold text-gray-800">เติมสต็อก / ปรับยอดสต็อกอะไหล่</h2>
                             <p class="text-gray-500 text-sm mt-1">ค้นหาอะไหล่เพื่อทำการเติมสต็อก ปรับยอดเพิ่มหรือลดสต็อกสินค้า</p>
                         </div>
-                        <div>
-                            <button onclick="exportRestockToExcel()" class="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-950/20 active:scale-95 transition-all">
+                        <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                            <button id="btnBulkAdjustStock" onclick="toggleBulkAdjustMode()" class="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold shadow-md shadow-amber-900/20 active:scale-95 transition-all">
+                                <i class="fa-solid fa-list-check text-base"></i> ปรับสต็อกหลายรายการ
+                            </button>
+                            <div id="bulkAdjustActions" class="hidden flex items-center gap-2">
+                                <button onclick="saveBulkAdjustStock()" class="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-md shadow-emerald-950/20 active:scale-95 transition-all animate-pulse">
+                                    <i class="fa-solid fa-floppy-disk text-base"></i> บันทึกสต็อกที่แก้ไข
+                                </button>
+                                <button onclick="cancelBulkAdjustMode()" class="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-500 hover:bg-slate-600 text-white rounded-xl text-sm font-semibold shadow-md active:scale-95 transition-all">
+                                    <i class="fa-solid fa-xmark text-base"></i> ยกเลิก
+                                </button>
+                            </div>
+                            <button onclick="exportRestockToExcel()" class="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-semibold shadow-md shadow-emerald-950/20 active:scale-95 transition-all">
                                 <i class="fa-solid fa-file-excel text-lg"></i> ส่งออก Excel
                             </button>
                         </div>
@@ -664,8 +675,17 @@
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm w-full">
                         <div class="relative w-full md:w-80 flex-shrink-0">
                             <i class="fa-solid fa-search absolute left-3.5 top-3 text-gray-400"></i>
-                            <input type="text" id="searchRestockProduct" onkeyup="renderRestockTable()" placeholder="พิมพ์รหัส หรือชื่อสินค้าเพื่อค้นหา..." class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm transition">
+                            <input type="text" id="searchRestockProduct" oninput="onRestockSearchChange()" placeholder="พิมพ์รหัส หรือชื่อสินค้าเพื่อค้นหา..." class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm transition">
                         </div>
+                    </div>
+
+                    <!-- Bulk Edit Banner -->
+                    <div id="bulkAdjustBanner" class="hidden mb-4 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs sm:text-sm font-semibold flex items-center justify-between shadow-sm">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-amber-500 text-lg flex-shrink-0"></i>
+                            <span>โหมดปรับสต็อกหลายรายการ: พิมพ์จำนวนสต็อกใหม่ที่ต้องการในคอลัมน์ "สต็อกปัจจุบัน" แล้วกด "บันทึกสต็อกที่แก้ไข"</span>
+                        </div>
+                        <span id="bulkChangeCountBadge" class="px-3 py-1 bg-amber-200 text-amber-900 rounded-lg font-bold text-xs flex-shrink-0 ml-2">แก้ไขแล้ว 0 รายการ</span>
                     </div>
 
                     <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden w-full">
@@ -686,6 +706,15 @@
                                 <tbody id="restockTableBody" class="divide-y divide-gray-200 bg-white">
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- Pagination Bar -->
+                    <div id="restockPagination" class="flex flex-col sm:flex-row justify-between items-center gap-4 mt-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm w-full">
+                        <div id="restockPaginationInfo" class="text-xs sm:text-sm font-medium text-slate-500">
+                            แสดง 1 - 20 จากทั้งหมด 0 รายการ
+                        </div>
+                        <div id="restockPaginationControls" class="flex items-center gap-1.5 flex-wrap">
                         </div>
                     </div>
                 </section>
@@ -2016,7 +2045,7 @@
 
                 <!-- ================== QR Code Modal ================== -->
                 <div id="qrCodeModal" class="fixed inset-0 bg-gray-900/60 z-[100] flex items-center justify-center hidden backdrop-blur-sm p-4" onclick="closeQRCodeModal()">
-                    <div class="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 transform transition-all my-auto flex flex-col items-center" onclick="event.stopPropagation()">
+                    <div class="bg-white rounded-3xl w-full max-w-[420px] shadow-2xl p-6 transform transition-all my-auto flex flex-col items-center" onclick="event.stopPropagation()">
                         <div class="w-full flex justify-between items-center mb-4 flex-shrink-0">
                             <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-qrcode text-sky-500"></i> QR Code อะไหล่</h3>
                             <button onclick="closeQRCodeModal()" class="text-gray-400 hover:text-red-500 transition p-1.5 rounded-lg hover:bg-red-50">
@@ -2024,6 +2053,48 @@
                             </button>
                         </div>
                         
+                        <!-- Size Config Card -->
+                        <div class="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 mb-4 w-full flex flex-col gap-3">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-ruler-combined text-sky-500"></i>
+                                    กำหนดขนาดสิ่งพิมพ์ (cm)
+                                </span>
+                                <label class="inline-flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none font-medium">
+                                    <input type="checkbox" id="qrKeepAspect" checked onchange="toggleQRKeepAspect()" class="w-4 h-4 text-sky-600 rounded border-gray-300 focus:ring-sky-500 cursor-pointer">
+                                    คงอัตราส่วน 1:1
+                                </label>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">ความกว้าง (Width)</label>
+                                    <div class="relative flex items-center">
+                                        <input type="number" id="qrWidthCm" value="5" min="1" max="50" step="0.1" oninput="onQRWidthChange()" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 pr-8 text-xs font-bold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition">
+                                        <span class="absolute right-3 text-xs text-slate-400 font-medium pointer-events-none">cm</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">ความสูง (Height)</label>
+                                    <div class="relative flex items-center">
+                                        <input type="number" id="qrHeightCm" value="5" min="1" max="50" step="0.1" oninput="onQRHeightChange()" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 pr-8 text-xs font-bold text-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition">
+                                        <span class="absolute right-3 text-xs text-slate-400 font-medium pointer-events-none">cm</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-200/60 my-0.5"></div>
+
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="text-[11px] font-medium text-slate-500 mr-0.5">ขนาดแนะนำ:</span>
+                                <button type="button" onclick="setQRSizePreset(3, 3)" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 rounded-lg text-xs font-medium transition active:scale-95 shadow-sm">3x3 cm</button>
+                                <button type="button" onclick="setQRSizePreset(4, 4)" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 rounded-lg text-xs font-medium transition active:scale-95 shadow-sm">4x4 cm</button>
+                                <button type="button" onclick="setQRSizePreset(5, 5)" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 rounded-lg text-xs font-medium transition active:scale-95 shadow-sm">5x5 cm</button>
+                                <button type="button" onclick="setQRSizePreset(6, 4)" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 rounded-lg text-xs font-medium transition active:scale-95 shadow-sm">6x4 cm</button>
+                                <button type="button" onclick="setQRSizePreset(8, 5)" class="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700 rounded-lg text-xs font-medium transition active:scale-95 shadow-sm">8x5 cm</button>
+                            </div>
+                        </div>
+
                         <!-- Print/Display Container -->
                         <div id="qrPrintArea" class="flex flex-col items-center bg-white p-5 border border-gray-150 rounded-2xl w-full">
                             <canvas id="qrCodeCanvas" class="w-52 h-52"></canvas>
