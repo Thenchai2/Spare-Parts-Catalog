@@ -1342,7 +1342,8 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     cost: p.cost, category: p.category, note: newNote, imageBase64: null,
                     price_a: p.price_a,
                     price_b: p.price_b,
-                    price_c: p.price_c
+                    price_c: p.price_c,
+                    stock_qty: p.stock_qty
                 };
                 let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'editProduct', payload: payload }) });
                 let result = await res.json();
@@ -1402,6 +1403,18 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             const pB = fNumberM(m.price_b, costVal * 1.7);
             const pC = fNumberM(m.price_c, costVal * 1.3);
             
+            // คำนวณจำนวนอะไหล่ที่เชื่อมโยงกับเครื่องจักรนี้
+            const validProductIds = new Set(db.products.map(p => String(p.id).trim()));
+            let partsCount = 0;
+            db.mappings.forEach(mapEntry => {
+                if (String(mapEntry.machine_id).trim() === String(machineId).trim()) {
+                    const pid = String(mapEntry.product_id).trim();
+                    if (validProductIds.has(pid)) {
+                        partsCount++;
+                    }
+                }
+            });
+            
             let costHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="bg-red-500/20 border border-red-400/30 px-3 py-1.5 rounded-lg text-red-200 text-sm font-medium">ต้นทุน: <span class="text-white font-bold text-base ml-1">฿${costStr}</span></div>` : '';
 
             banner.innerHTML = `
@@ -1438,6 +1451,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                                 <div class="bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-orange-200 text-sm">เครือ: <span class="text-white font-bold ml-1">฿${pC}</span></div>
                                 ` : ''}
                             `}
+                            <div class="bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg text-slate-200 text-sm font-medium"><i class="fa-solid fa-gears mr-1"></i>Spare Parts จำนวน: <span class="text-white font-bold ml-1">${partsCount}</span> ชิ้น</div>
                         </div>
                     </div>
                     <div class="absolute top-0 right-0 hidden md:block">
@@ -1472,7 +1486,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 }
 
                 let filteredProducts = db.products.filter(p => {
-                    const textToSearch = `${p.id} ${p.name}`.toLowerCase();
+                    const textToSearch = `${p.id} ${p.name} ${p.group || ''} ${p.supplier || ''} ${p.storage || ''}`.toLowerCase();
                     const matchSearch = searchKeywords.length === 0 || searchKeywords.every(kw => textToSearch.includes(kw));
                     let matchCategory = selectedCategory === 'all' || p.category === selectedCategory;
                     let matchMachine = selectedMachine === 'all' || mappedProductIds.has(String(p.id));
@@ -1519,7 +1533,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     const pB = fNumber(p.price_b, costVal * 1.7);
                     const pC = fNumber(p.price_c, costVal * 1.3);
 
-                    let costLineHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr}</span></div>` : '';
+                    let costLineHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>` : '';
 
                     const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
 
@@ -1561,21 +1575,21 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                                     <div class="space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-100">
                                         ${(isLoggedIn && currentUser && currentUser.role === 'user') ? `
                                             ${(currentUser.priceLevel === 'B') ? `
-                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-green-600 text-base">฿${pB}</span></div>
+                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-green-600 text-base">฿${pB} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             ` : (currentUser.priceLevel === 'C') ? `
-                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-orange-600 text-base">฿${pC}</span></div>
+                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-orange-600 text-base">฿${pC} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             ` : (currentUser.priceLevel === 'COST') ? `
-                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-purple-600 text-base">฿${p.cost}</span></div>
+                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-purple-600 text-base">฿${fNumber(p.cost, p.cost)} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             ` : `
-                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-blue-600 text-base">฿${pA}</span></div>
+                                                <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคา:</span><span class="font-bold text-blue-600 text-base">฿${pA} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             `}
                                         ` : `
-                                            <div class="flex justify-between items-center text-sm"><span class="text-gray-500">${(isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'ราคากลาง:' : 'ราคา:'}</span><span class="font-bold text-blue-600 text-base">฿${pA}</span></div>
+                                            <div class="flex justify-between items-center text-sm"><span class="text-gray-500">${(isLoggedIn || isShowPriceBForGuest || isShowPriceCForGuest) ? 'ราคากลาง:' : 'ราคา:'}</span><span class="font-bold text-blue-600 text-base">฿${pA} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             ${(isLoggedIn || isShowPriceBForGuest) ? `
-                                            <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคาตัวแทน:</span><span class="font-bold text-green-600 text-base">฿${pB}</span></div>
+                                            <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคาตัวแทน:</span><span class="font-bold text-green-600 text-base">฿${pB} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             ` : ''}
                                             ${(isLoggedIn || isShowPriceCForGuest) ? `
-                                            <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคาในเครือ:</span><span class="font-bold text-orange-600 text-base">฿${pC}</span></div>
+                                            <div class="flex justify-between items-center text-sm"><span class="text-gray-500">ราคาในเครือ:</span><span class="font-bold text-orange-600 text-base">฿${pC} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>
                                             ` : ''}
                                         `}
                                     </div>
@@ -1596,8 +1610,18 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             } else {
                 document.getElementById('selectedMachineBanner').classList.add('hidden');
 
+                const validProductIds = new Set(db.products.map(p => String(p.id).trim()));
+                const machinePartsCountMap = new Map();
+                db.mappings.forEach(mapEntry => {
+                    const pid = String(mapEntry.product_id).trim();
+                    if (validProductIds.has(pid)) {
+                        const mid = String(mapEntry.machine_id).trim();
+                        machinePartsCountMap.set(mid, (machinePartsCountMap.get(mid) || 0) + 1);
+                    }
+                });
+
                 let filteredMachines = db.machines.filter(m => {
-                    const textToSearch = `${m.id} ${m.name}`.toLowerCase();
+                    const textToSearch = `${m.id} ${m.name} ${m.group || ''} ${m.supplier || ''} ${m.storage || ''}`.toLowerCase();
                     return searchKeywords.length === 0 || searchKeywords.every(kw => textToSearch.includes(kw));
                 });
 
@@ -1620,6 +1644,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 pageMachines.forEach(m => {
                     let imgSource = m.image_url ? m.image_url : `https://placehold.co/400x300/f8fafc/94a3b8?text=No+Image`;
                     const clickAction = `openMachineDetailModal('${escapeForJS(m.id)}');`;
+                    const partsCount = machinePartsCountMap.get(String(m.id).trim()) || 0;
 
                     const costVal = parseFloat(String(m.cost).replace(/,/g, '')) || 0;
                     const costStr = costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1676,6 +1701,9 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                                 <div class="mt-auto flex justify-between items-center pt-3 border-t border-gray-100">
                                     <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-md group-hover:bg-purple-600 group-hover:text-white transition-colors">
                                         คลิกเพื่อดูอะไหล่ <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i>
+                                    </span>
+                                    <span class="text-[11px] font-semibold text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md flex items-center gap-1" title="จำนวนอะไหล่ที่เชื่อมโยงกับเครื่องจักรนี้">
+                                        <i class="fa-solid fa-wrench text-[9px] text-slate-400"></i>อะไหล่: <strong class="text-slate-800">${partsCount}</strong> ชิ้น
                                     </span>
                                 </div>
                             </div>
@@ -2305,6 +2333,9 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             document.getElementById('mdm_id').innerText = m.id;
             document.getElementById('mdm_name').innerText = m.name;
             document.getElementById('mdm_unit').innerText = 'หน่วย: ' + (m.unit || 'เครื่อง');
+            document.getElementById('mdm_group').innerText = m.group || '-';
+            document.getElementById('mdm_supplier').innerText = m.supplier || '-';
+            document.getElementById('mdm_storage').innerText = m.storage || '-';
             
             const mdmNoteEl = document.getElementById('mdm_note');
             mdmNoteEl.innerText = m.note || 'ไม่มีรายละเอียดเพิ่มเติม';
@@ -2400,6 +2431,9 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             document.getElementById('pd_name').innerText = p.name;
             document.getElementById('pd_category').innerText = p.category || 'ไม่ระบุ';
             document.getElementById('pd_unit').innerText = 'หน่วย: ' + (p.unit || 'ชิ้น');
+            document.getElementById('pd_group').innerText = p.group || '-';
+            document.getElementById('pd_supplier').innerText = p.supplier || '-';
+            document.getElementById('pd_storage').innerText = p.storage || '-';
             
             const pdStockEl = document.getElementById('pd_stock');
             if (p.stock_qty <= 0) {
@@ -2571,7 +2605,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 price_a: document.getElementById('ap_price_a').value,
                 price_b: document.getElementById('ap_price_b').value,
                 price_c: document.getElementById('ap_price_c').value,
-                stock_qty: document.getElementById('ap_stock_qty').value || 0
+                stock_qty: document.getElementById('ap_stock_qty').value || 0,
+                group: document.getElementById('ap_group').value.trim(),
+                supplier: document.getElementById('ap_supplier').value.trim(),
+                storage: document.getElementById('ap_storage').value.trim()
             };
 
             showLoading('กำลังบันทึกข้อมูลและอัปโหลดรูป (อาจใช้เวลาสักครู่)...');
@@ -2709,6 +2746,9 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             document.getElementById('ep_id').value = p.id; document.getElementById('ep_id_display').value = p.id;
             document.getElementById('ep_name').value = p.name || ''; document.getElementById('ep_unit').value = p.unit || '';
             document.getElementById('ep_cost').value = p.cost || ''; document.getElementById('ep_cat').value = p.category || '';
+            document.getElementById('ep_group').value = p.group || '';
+            document.getElementById('ep_supplier').value = p.supplier || '';
+            document.getElementById('ep_storage').value = p.storage || '';
             document.getElementById('ep_price_a').value = p.price_a || '';
             document.getElementById('ep_price_b').value = p.price_b || '';
             document.getElementById('ep_price_c').value = p.price_c || '';
@@ -2749,7 +2789,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 price_a: document.getElementById('ep_price_a').value,
                 price_b: document.getElementById('ep_price_b').value,
                 price_c: document.getElementById('ep_price_c').value,
-                stock_qty: document.getElementById('ep_stock_qty').value || 0
+                stock_qty: document.getElementById('ep_stock_qty').value || 0,
+                group: document.getElementById('ep_group').value.trim(),
+                supplier: document.getElementById('ep_supplier').value.trim(),
+                storage: document.getElementById('ep_storage').value.trim()
             };
 
             showLoading('กำลังบันทึกการแก้ไขข้อมูล...');
@@ -2777,6 +2820,9 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             document.getElementById('em_id').value = m.id;
             document.getElementById('em_id_display').value = m.id;
             document.getElementById('em_name').value = m.name || '';
+            document.getElementById('em_group').value = m.group || '';
+            document.getElementById('em_supplier').value = m.supplier || '';
+            document.getElementById('em_storage').value = m.storage || '';
             document.getElementById('em_note').value = m.note || '';
             document.getElementById('em_cost').value = m.cost || '';
             document.getElementById('em_price_a').value = m.price_a || '';
@@ -2834,7 +2880,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 price_a: parseFloat(document.getElementById('am_price_a').value) || 0,
                 price_b: parseFloat(document.getElementById('am_price_b').value) || 0,
                 price_c: parseFloat(document.getElementById('am_price_c').value) || 0,
-                imageBase64: base64
+                imageBase64: base64,
+                group: document.getElementById('am_group').value.trim(),
+                supplier: document.getElementById('am_supplier').value.trim(),
+                storage: document.getElementById('am_storage').value.trim()
             };
 
             showLoading('กำลังบันทึกข้อมูลเครื่องจักร...');
@@ -2864,7 +2913,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 price_a: parseFloat(document.getElementById('em_price_a').value) || 0,
                 price_b: parseFloat(document.getElementById('em_price_b').value) || 0,
                 price_c: parseFloat(document.getElementById('em_price_c').value) || 0,
-                imageBase64: base64
+                imageBase64: base64,
+                group: document.getElementById('em_group').value.trim(),
+                supplier: document.getElementById('em_supplier').value.trim(),
+                storage: document.getElementById('em_storage').value.trim()
             };
 
             showLoading('กำลังบันทึกการแก้ไขข้อมูล...');
@@ -2887,7 +2939,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             let filteredMachines = db.machines;
             if (searchKeywords.length > 0) {
                 filteredMachines = filteredMachines.filter(m => {
-                    const textToSearch = `${m.id} ${m.name}`.toLowerCase();
+                    const textToSearch = `${m.id} ${m.name} ${m.group || ''} ${m.supplier || ''} ${m.storage || ''}`.toLowerCase();
                     return searchKeywords.every(kw => textToSearch.includes(kw));
                 });
             }
@@ -3114,7 +3166,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             let filteredProducts = db.products;
             if (searchKeywords.length > 0) {
                 filteredProducts = filteredProducts.filter(p => {
-                    const textToSearch = `${p.id} ${p.name}`.toLowerCase();
+                    const textToSearch = `${p.id} ${p.name} ${p.group || ''} ${p.supplier || ''} ${p.storage || ''}`.toLowerCase();
                     return searchKeywords.every(kw => textToSearch.includes(kw));
                 });
             }
@@ -3851,12 +3903,14 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             }
             
             let total = 0;
+            const userPriceLevel = (currentUser && currentUser.priceLevel) ? currentUser.priceLevel : 'A';
             const cartItems = posCart.map(item => {
                 total += item.price * item.qty;
                 return {
                     id: item.id,
                     qty: item.qty,
-                    price: item.price
+                    price: item.price,
+                    priceLevel: userPriceLevel
                 };
             });
             
@@ -4061,12 +4115,14 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             }
             
             let total = 0;
+            const userPriceLevel = (currentUser && currentUser.priceLevel) ? currentUser.priceLevel : 'A';
             const cartItems = posCart.map(item => {
                 total += item.price * item.qty;
                 return {
                     id: item.id,
                     qty: item.qty,
-                    price: item.price
+                    price: item.price,
+                    priceLevel: userPriceLevel
                 };
             });
             
@@ -4143,12 +4199,14 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             }
             
             let total = 0;
+            const userPriceLevel = (currentUser && currentUser.priceLevel) ? currentUser.priceLevel : 'A';
             const cartItems = posCart.map(item => {
                 total += item.price * item.qty;
                 return {
                     id: item.id,
                     qty: item.qty,
-                    price: item.price
+                    price: item.price,
+                    priceLevel: userPriceLevel
                 };
             });
             
