@@ -1,6 +1,6 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1OqQEixgT5b2srLf8qiqsyjuhncKSGm0vbqE8uoJ2RluO/exec';
         
-        let db = { products: [], machines: [], mappings: [] };
+        let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
         let isShowCostInCatalog = false;
         let isShowPriceBForGuest = false;
         let isShowPriceCForGuest = false;
@@ -27,11 +27,16 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             'user': ['view-catalog', 'view-pos', 'view-transactions', 'view-settings', 'view-manual'],
             'Technician': ['view-catalog', 'view-pos', 'view-transactions', 'view-settings', 'view-manual'],
             'Manager': ['view-catalog', 'view-pos', 'view-transactions', 'view-add-product', 'view-edit-products', 'view-restock', 'view-report', 'view-restock-history', 'view-settings', 'view-manage-manuals', 'view-manual', 'view-user-management'],
-            'ADMIN': ['view-catalog', 'view-pos', 'view-transactions', 'view-add-product', 'view-machines', 'view-mapping', 'view-edit-products', 'view-edit-mapping', 'view-restock', 'view-report', 'view-restock-history', 'view-settings', 'view-manage-manuals', 'view-manual', 'view-user-management']
+            'ADMIN': ['view-catalog', 'view-pos', 'view-transactions', 'view-add-product', 'view-machines', 'view-mapping', 'view-edit-products', 'view-edit-mapping', 'view-restock', 'view-report', 'view-restock-history', 'view-settings', 'view-manage-manuals', 'view-manual', 'view-user-management', 'view-purchase'],
+            'StoreOfficer': ['view-catalog', 'view-purchase']
         };
 
         function hasAccess(viewId) {
-            if (viewId === 'view-catalog' || viewId === 'view-manual') return true;
+            if (viewId === 'view-catalog') return true;
+            if (viewId === 'view-manual') {
+                if (isLoggedIn && currentUser && currentUser.role === 'StoreOfficer') return false;
+                return true;
+            }
             if (!isLoggedIn || !currentUser) return false;
             const allowedViews = ROLE_PERMISSIONS[currentUser.role] || [];
             return allowedViews.includes(viewId);
@@ -227,6 +232,18 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             }
             if (viewId === 'view-user-management') {
                 fetchAndRenderUsersList();
+            }
+            if (viewId === 'view-purchase') {
+                closePurchaseSubSection();
+                const isAdmin = currentUser && currentUser.role === 'ADMIN';
+                const cardManage = document.getElementById('card-manage-orders');
+                if (cardManage) {
+                    cardManage.classList.toggle('hidden', !isAdmin);
+                }
+                const cardHistory = document.getElementById('card-purchase-history');
+                if (cardHistory) {
+                    cardHistory.classList.toggle('hidden', !isAdmin);
+                }
             }
 
             if (element) {
@@ -499,12 +516,21 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     if (viewId === 'divider-admin') {
                         el.classList.toggle('hidden', currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager');
                     } else if (viewId === 'divider-pos') {
-                        el.classList.remove('hidden');
+                        el.classList.toggle('hidden', !hasAccess('view-pos') && !hasAccess('view-transactions'));
                     } else {
                         el.classList.toggle('hidden', !hasAccess(viewId));
                     }
                 }
             });
+
+            const manualNavItem = document.getElementById('nav-item-manual');
+            if (manualNavItem) {
+                if (!isLoggedIn) {
+                    manualNavItem.classList.remove('hidden');
+                } else {
+                    manualNavItem.classList.toggle('hidden', !hasAccess('view-manual'));
+                }
+            }
             
             initSettingsView();
             
@@ -520,9 +546,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 if (currentUser.role === 'ADMIN') roleColor = 'bg-red-600';
                 else if (currentUser.role === 'Manager') roleColor = 'bg-amber-600';
                 else if (currentUser.role === 'Technician') roleColor = 'bg-purple-600';
+                else if (currentUser.role === 'StoreOfficer') roleColor = 'bg-emerald-600';
                 
                 let userTypeLabel = '';
-                if (currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
+                if (currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager' && currentUser.role !== 'StoreOfficer') {
                     userTypeLabel = currentUser.userType === 'outsource' ? ' (Outsource)' : ' (Insource)';
                 }
                 
@@ -530,7 +557,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     <div class="flex flex-col text-left">
                         <span class="font-bold text-white text-xs truncate">${escapeHTML(currentUser.fullName)}</span>
                         <span class="text-[9px] text-gray-400 truncate mt-0.5">${escapeHTML(currentUser.department)}</span>
-                        <span class="text-[8px] font-extrabold text-white px-1.5 py-0.5 rounded ${roleColor} w-max mt-1 uppercase">${currentUser.role}${userTypeLabel}</span>
+                        <span class="text-[8px] font-extrabold text-white px-1.5 py-0.5 rounded ${roleColor} w-max mt-1 uppercase">${currentUser.role === 'StoreOfficer' ? 'Store Officer' : currentUser.role}${userTypeLabel}</span>
                     </div>
                 `;
             } else {
@@ -800,9 +827,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 if (u.role === 'ADMIN') roleColor = 'bg-red-50 text-red-700 border border-red-150';
                 else if (u.role === 'Manager') roleColor = 'bg-amber-50 text-amber-700 border border-amber-150';
                 else if (u.role === 'Technician') roleColor = 'bg-purple-50 text-purple-700 border border-purple-150';
+                else if (u.role === 'StoreOfficer') roleColor = 'bg-emerald-50 text-emerald-700 border border-emerald-150';
                 
                 let userTypeBadge = '';
-                if (u.role !== 'ADMIN' && u.role !== 'Manager') {
+                if (u.role !== 'ADMIN' && u.role !== 'Manager' && u.role !== 'StoreOfficer') {
                     const isOutsource = (u.userType === 'outsource');
                     userTypeBadge = isOutsource
                         ? `<span class="inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 border border-orange-200">Outsource (ภายนอก)</span>`
@@ -855,7 +883,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
         }
 
         function editUserRoleAndPrice(targetEmail, currentRole, currentPriceLevel, currentUserType) {
-            const isNonAdminManager = (currentRole !== 'ADMIN' && currentRole !== 'Manager');
+            const isNonAdminManager = (currentRole !== 'ADMIN' && currentRole !== 'Manager' && currentRole !== 'StoreOfficer');
             Swal.fire({
                 title: 'แก้ไขสิทธิ์และระดับราคาสมาชิก',
                 html: `
@@ -874,6 +902,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                             <select id="swal-edit-role" class="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs text-gray-800 bg-white cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500">
                                 <option value="user" ${currentRole === 'user' ? 'selected' : ''}>user (สมาชิกทั่วไป - POS & Catalog)</option>
                                 <option value="Technician" ${currentRole === 'Technician' ? 'selected' : ''}>Technician (ช่างเทคนิค - POS & Catalog)</option>
+                                <option value="StoreOfficer" ${currentRole === 'StoreOfficer' ? 'selected' : ''}>Store Officer (เจ้าหน้าที่สโตว์ - แดชบอร์ด & งานจัดซื้อ)</option>
                                 <option value="Manager" ${currentRole === 'Manager' ? 'selected' : ''}>Manager (ผู้บริหารจัดการ - คลัง & ประวัติ)</option>
                                 <option value="ADMIN" ${currentRole === 'ADMIN' ? 'selected' : ''}>ADMIN (ผู้ดูแลระบบสูงสุด)</option>
                             </select>
@@ -913,7 +942,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     if (roleSelect && typeBox) {
                         roleSelect.addEventListener('change', () => {
                             const selected = roleSelect.value;
-                            if (selected === 'ADMIN' || selected === 'Manager') {
+                            if (selected === 'ADMIN' || selected === 'Manager' || selected === 'StoreOfficer') {
                                 typeBox.classList.add('hidden');
                             } else {
                                 typeBox.classList.remove('hidden');
@@ -925,7 +954,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                     const newRole = document.getElementById('swal-edit-role').value;
                     const newPrice = document.getElementById('swal-edit-price').value;
                     const typeSelect = document.getElementById('swal-edit-user-type');
-                    const newUserType = (newRole === 'ADMIN' || newRole === 'Manager')
+                    const newUserType = (newRole === 'ADMIN' || newRole === 'Manager' || newRole === 'StoreOfficer')
                         ? 'insource'
                         : (typeSelect ? typeSelect.value : 'insource');
                     return { newRole, newPrice, newUserType };
@@ -6098,3 +6127,1486 @@ function exportReportToExcel() {
             }
             window.open(url, '_blank');
         }
+
+        // ===== Purchasing Module Helper Functions =====
+        let purchaseActiveTab = 'all'; // 'all' หรือ 'pending'
+        let purchaseSearchQuery = '';
+        let dashboardOrdersSearchQuery = '';
+        let draftOrdersSearchQuery = '';
+        let manageOrdersSearchQuery = '';
+        let manageOrdersSupplierFilter = '';
+        let purchaseHistorySearchQuery = '';
+        let purchaseHistoryCategoryFilter = '';
+        let purchaseHistoryGroupFilter = '';
+
+        function openPurchaseSubSection(key, title, iconClass, gradientClass) {
+            const gridEl = document.getElementById('purchase-menu-grid');
+            if (gridEl) gridEl.classList.add('hidden');
+            
+            const subContent = document.getElementById('purchase-sub-content');
+            if (subContent) subContent.classList.remove('hidden');
+
+            const iconBg = document.getElementById('sub-sec-icon-bg');
+            if (iconBg) {
+                iconBg.className = "w-12 h-12 rounded-xl text-white flex items-center justify-center bg-gradient-to-br " + gradientClass;
+            }
+            
+            const icon = document.getElementById('sub-sec-icon');
+            if (icon) {
+                icon.className = "fa-solid text-xl " + iconClass;
+            }
+
+            const titleEl = document.getElementById('sub-sec-title');
+            if (titleEl) titleEl.innerText = title;
+            
+            let desc = "";
+            let htmlContent = "";
+            if (key === 'receive') {
+                desc = "โมดูลการตรวจรับสินค้าและตรวจสอบคุณภาพ";
+                htmlContent = `
+                    <div class="space-y-6">
+                        <!-- Sub Header Control Row -->
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <!-- Filter Tabs -->
+                            <div class="flex bg-slate-100 p-1 rounded-xl w-max border border-slate-200">
+                                <button onclick="setPurchaseFilterTab('all')" id="tab-purchase-all" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/55">
+                                    ทั้งหมด
+                                </button>
+                                <button onclick="setPurchaseFilterTab('pending')" id="tab-purchase-pending" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800">
+                                    ค้างส่ง
+                                </button>
+                            </div>
+                            <!-- Search Field -->
+                            <div class="relative max-w-sm w-full md:w-80">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                </span>
+                                <input type="text" onkeyup="handlePurchaseSearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหาด้วย PO, PR, รหัส หรือชื่อสินค้า...">
+                            </div>
+                        </div>
+
+                        <!-- Data Table Container -->
+                        <div class="overflow-x-auto w-full border border-slate-150 rounded-2xl shadow-sm bg-white table-scroll">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-150 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                        <th class="p-4">PO Number</th>
+                                        <th class="p-4">PR Number</th>
+                                        <th class="p-4">รหัสสินค้า</th>
+                                        <th class="p-4">ชื่อสินค้า</th>
+                                        <th class="p-4 text-center">วันที่สั่งสินค้า</th>
+                                        <th class="p-4 text-center">จำนวนที่สั่ง</th>
+                                        <th class="p-4 text-center">วันที่รับล่าสุด</th>
+                                        <th class="p-4 text-center">จำนวนที่รับ</th>
+                                        <th class="p-4 text-center">จำนวนค้างรับ</th>
+                                        <th class="p-4 text-center rounded-tr-2xl">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="receiveTableBody" class="divide-y divide-slate-100 text-xs text-slate-700">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                // Initialize the table body rendering
+                setTimeout(() => {
+                    purchaseActiveTab = 'all';
+                    purchaseSearchQuery = '';
+                    renderReceiveTable();
+                }, 50);
+
+            } else if (key === 'dashboard-orders') {
+                desc = "ค้นหาและวิเคราะห์รายการสั่งซื้อพร้อมระดับสถานะอย่างละเอียด";
+                htmlContent = `
+                    <div class="space-y-6">
+                        <!-- Sub Header Control Row -->
+                        <div class="flex flex-col md:flex-row md:items-center justify-end gap-4">
+                            <!-- Search Field -->
+                            <div class="relative max-w-sm w-full md:w-80">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                </span>
+                                <input type="text" onkeyup="handleDashboardOrdersSearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหาด้วย PO, PR, รหัส หรือชื่อสินค้า...">
+                            </div>
+                        </div>
+
+                        <!-- Data Table Container -->
+                        <div class="overflow-x-auto w-full border border-slate-150 rounded-2xl shadow-sm bg-white table-scroll">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-150 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                        <th class="p-4">PO Number</th>
+                                        <th class="p-4">PR Number</th>
+                                        <th class="p-4">รหัสสินค้า</th>
+                                        <th class="p-4">ชื่อสินค้า</th>
+                                        <th class="p-4 text-center">วันที่สั่งสินค้า</th>
+                                        <th class="p-4 text-center">จำนวนที่สั่ง</th>
+                                        <th class="p-4 text-center rounded-tr-2xl">สถานะ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashboardOrdersTableBody" class="divide-y divide-slate-100 text-xs text-slate-700">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                // Initialize the table body rendering
+                setTimeout(() => {
+                    dashboardOrdersSearchQuery = '';
+                    renderDashboardOrdersTable();
+                }, 50);
+
+            } else if (key === 'add-order') {
+                desc = "สร้างเอกสารขอซื้อหรือสั่งซื้อสินค้า (PR/PO)";
+                htmlContent = `
+                    <div class="space-y-6">
+                        <!-- Sub Header Control Row -->
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <!-- Left: Buttons -->
+                            <div class="flex items-center gap-3">
+                                <button onclick="handleAddOrderDraft()" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95">
+                                    <i class="fa-solid fa-plus"></i> เพิ่มรายการ
+                                </button>
+                                <button onclick="exportDraftOrdersToExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95">
+                                    <i class="fa-solid fa-file-excel"></i> ส่งออก Excel
+                                </button>
+                            </div>
+                            <!-- Right: Search Field -->
+                            <div class="relative max-w-sm w-full md:w-80">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                </span>
+                                <input type="text" onkeyup="handleDraftOrdersSearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหาด้วยรหัส หรือชื่อสินค้า...">
+                            </div>
+                        </div>
+
+                        <!-- Data Table Container -->
+                        <div class="overflow-x-auto w-full border border-slate-150 rounded-2xl shadow-sm bg-white table-scroll">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-150 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                        <th class="p-4">รหัสสินค้า</th>
+                                        <th class="p-4">ชื่อสินค้า</th>
+                                        <th class="p-4">Supplier</th>
+                                        <th class="p-4 text-center">จำนวนที่สั่ง</th>
+                                        <th class="p-4 text-center">หน่วย</th>
+                                        <th class="p-4 text-center rounded-tr-2xl" style="width: 140px;">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="draftOrdersTableBody" class="divide-y divide-slate-100 text-xs text-slate-700">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                // Initialize the table body rendering
+                setTimeout(() => {
+                    draftOrdersSearchQuery = '';
+                    renderDraftOrdersTable();
+                }, 50);
+            } else if (key === 'manage-orders') {
+                desc = "ตรวจสอบความคืบหน้า อนุมัติ หรืออัปเดตใบสั่งซื้อ";
+                
+                // Get unique suppliers list from db.products
+                const products = db.products || [];
+                const suppliers = [...new Set(products.map(p => p.supplier || 'ไม่ระบุ').filter(Boolean))].sort();
+                const supplierOptions = suppliers.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
+
+                htmlContent = `
+                    <div class="space-y-6">
+                        <!-- Sub Header Control Row -->
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <!-- Left: Filter Dropdown -->
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                                <span class="text-xs font-semibold text-slate-500">กรองซัพพลายเออร์:</span>
+                                <select onchange="handleManageOrdersSupplierFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[200px]">
+                                    <option value="">ทั้งหมด</option>
+                                    ${supplierOptions}
+                                </select>
+                            </div>
+                            <!-- Right: Search Field -->
+                            <div class="relative max-w-sm w-full md:w-80">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                </span>
+                                <input type="text" onkeyup="handleManageOrdersSearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหาด้วยรหัส, ชื่อสินค้า หรือ PO/PR...">
+                            </div>
+                        </div>
+
+                        <!-- Data Table Container -->
+                        <div class="overflow-x-auto w-full border border-slate-150 rounded-2xl shadow-sm bg-white table-scroll">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-150 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                        <th class="p-4">วันที่สั่งสินค้า</th>
+                                        <th class="p-4">PO Number</th>
+                                        <th class="p-4">PR Number</th>
+                                        <th class="p-4">รหัสสินค้า</th>
+                                        <th class="p-4">ชื่อสินค้า</th>
+                                        <th class="p-4 text-center">จำนวนที่สั่ง</th>
+                                        <th class="p-4 text-center rounded-tr-2xl" style="width: 110px;">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="manageOrdersTableBody" class="divide-y divide-slate-100 text-xs text-slate-700">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                // Initialize the table body rendering
+                setTimeout(() => {
+                    manageOrdersSearchQuery = '';
+                    manageOrdersSupplierFilter = '';
+                    renderManageOrdersTable();
+                }, 50);
+            } else if (key === 'history') {
+                desc = "ประวัติและรายการสั่งซื้อที่ทำเสร็จสิ้นแล้ว";
+                
+                // Get unique categories and groups for filter dropdowns
+                const products = db.products || [];
+                const categories = [...new Set(products.map(p => p.category || 'ไม่ระบุ').filter(Boolean))].sort();
+                const categoryOptions = categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
+
+                const groups = [...new Set(products.map(p => p.group || 'ไม่ระบุ').filter(Boolean))].sort();
+                const groupOptions = groups.map(g => `<option value="${escapeHTML(g)}">${escapeHTML(g)}</option>`).join('');
+
+                htmlContent = `
+                    <div class="space-y-6">
+                        <!-- Search and Filter Row -->
+                        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <!-- Left Filters -->
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-wrap">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold text-slate-500">ประเภทอะไหล่:</span>
+                                    <select onchange="handleHistoryCategoryFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
+                                        <option value="">ทั้งหมด</option>
+                                        ${categoryOptions}
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-semibold text-slate-500">กลุ่มสินค้า:</span>
+                                    <select onchange="handleHistoryGroupFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
+                                        <option value="">ทั้งหมด</option>
+                                        ${groupOptions}
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Right Search -->
+                            <div class="relative max-w-sm w-full lg:w-80">
+                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                </span>
+                                <input type="text" onkeyup="handleHistorySearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา PO, PR, รหัสสินค้า, ชื่อสินค้า...">
+                            </div>
+                        </div>
+
+                        <!-- Cards Container -->
+                        <div id="purchaseHistoryCardsContainer" class="space-y-4">
+                            <!-- Cards rendered dynamically -->
+                        </div>
+                    </div>
+                `;
+
+                setTimeout(() => {
+                    purchaseHistorySearchQuery = '';
+                    purchaseHistoryCategoryFilter = '';
+                    purchaseHistoryGroupFilter = '';
+                    renderPurchaseHistoryCards();
+                }, 50);
+            } else if (key === 'overview') {
+                desc = "ภาพรวมงบประมาณจัดซื้อและสถิติยอดซื้อ";
+                htmlContent = `
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                            <div class="bg-white rounded-2xl border border-slate-150 p-4 shadow-sm flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                                    <i class="fa-solid fa-sack-dollar text-lg"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">ยอดสั่งซื้อเดือนนี้</p>
+                                    <h4 class="text-lg font-bold text-gray-800">฿0.00</h4>
+                                </div>
+                            </div>
+                            <div class="bg-white rounded-2xl border border-slate-150 p-4 shadow-sm flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                                    <i class="fa-solid fa-file-contract text-lg"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">จำนวนใบสั่งซื้อทั้งหมด</p>
+                                    <h4 class="text-lg font-bold text-gray-800">0 รายการ</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="border border-slate-100 rounded-2xl p-6 bg-slate-50/50 flex flex-col items-center justify-center text-center py-10">
+                            <i class="fa-solid fa-chart-bar text-slate-300 text-4xl mb-3"></i>
+                            <p class="text-sm font-bold text-slate-600">ไม่มีข้อมูลแสดงในกราฟ</p>
+                            <p class="text-xs text-slate-400 mt-1">จะวิเคราะห์และแสดงกราฟเมื่อมีการบันทึกจัดซื้อจริงในฐานข้อมูล</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const subtitleEl = document.getElementById('sub-sec-subtitle');
+            if (subtitleEl) subtitleEl.innerText = desc;
+            
+            const bodyEl = document.getElementById('sub-sec-body');
+            if (bodyEl) {
+                if (key === 'receive' || key === 'dashboard-orders' || key === 'add-order' || key === 'manage-orders' || key === 'history') {
+                    bodyEl.className = "w-full text-left text-slate-700";
+                } else {
+                    bodyEl.className = "flex flex-col items-center justify-center py-12 text-center text-slate-400";
+                }
+                bodyEl.innerHTML = htmlContent;
+            }
+        }
+
+        function closePurchaseSubSection() {
+            const subContent = document.getElementById('purchase-sub-content');
+            if (subContent) subContent.classList.add('hidden');
+            
+            const gridEl = document.getElementById('purchase-menu-grid');
+            if (gridEl) gridEl.classList.remove('hidden');
+
+            const bodyEl = document.getElementById('sub-sec-body');
+            if (bodyEl) {
+                bodyEl.className = "flex flex-col items-center justify-center py-12 text-center text-slate-400";
+                bodyEl.innerHTML = `
+                    <div class="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 text-3xl mb-4 border border-dashed border-slate-200">
+                        <i class="fa-solid fa-helmet-safety"></i>
+                    </div>
+                    <h4 class="text-slate-700 font-bold text-sm">ระบบส่วนงานนี้อยู่ระหว่างการเตรียมความพร้อม</h4>
+                    <p class="text-slate-400 text-xs mt-1 max-w-sm leading-relaxed">โมดูลนี้ได้รับการเชื่อมโยงแล้ว ทีมพัฒนากำลังดำเนินการติดตั้งฐานข้อมูลและหน้าอินเตอร์เฟสสำหรับการใช้งานจริง</p>
+                `;
+            }
+        }
+
+        function setPurchaseFilterTab(tab) {
+            purchaseActiveTab = tab;
+            const btnAll = document.getElementById('tab-purchase-all');
+            const btnPending = document.getElementById('tab-purchase-pending');
+            if (tab === 'all') {
+                if (btnAll) btnAll.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/50";
+                if (btnPending) btnPending.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800";
+            } else {
+                if (btnPending) btnPending.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/50";
+                if (btnAll) btnAll.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800";
+            }
+            renderReceiveTable();
+        }
+
+        function handlePurchaseSearch(val) {
+            purchaseSearchQuery = val.trim().toLowerCase();
+            renderReceiveTable();
+        }
+
+        function handleDashboardOrdersSearch(val) {
+            dashboardOrdersSearchQuery = val.trim().toLowerCase();
+            renderDashboardOrdersTable();
+        }
+
+        function renderReceiveTable() {
+            const tableBody = document.getElementById('receiveTableBody');
+            if (!tableBody) return;
+
+            const orders = db.purchaseOrders || [];
+            
+            // Filter: show only items with status "สั่งแล้ว" or "ค้างส่ง"
+            let filtered = orders.filter(o => o.status === "สั่งแล้ว" || o.status === "ค้างส่ง");
+
+            // Filter by active tab: if "pending" (ค้างส่ง), show items where status is "ค้างส่ง"
+            if (purchaseActiveTab === 'pending') {
+                filtered = filtered.filter(o => o.status === "ค้างส่ง");
+            }
+
+            // Filter by search query
+            if (purchaseSearchQuery) {
+                filtered = filtered.filter(o => 
+                    o.poNumber.toLowerCase().includes(purchaseSearchQuery) ||
+                    o.prNumber.toLowerCase().includes(purchaseSearchQuery) ||
+                    o.productId.toLowerCase().includes(purchaseSearchQuery) ||
+                    o.productName.toLowerCase().includes(purchaseSearchQuery)
+                );
+            }
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="p-12 text-center text-slate-400">
+                            <div class="flex flex-col items-center justify-center">
+                                <i class="fa-solid fa-boxes-packing text-slate-200 text-4xl mb-2"></i>
+                                <p class="text-sm font-bold text-slate-500">ไม่พบรายการค้างรับสินค้า</p>
+                                <p class="text-xs text-slate-400 mt-0.5">รายการสั่งซื้อทั้งหมดได้รับการจัดส่งครบถ้วน หรือไม่ตรงกับเงื่อนไขการค้นหา</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tableBody.innerHTML = '';
+            filtered.forEach(o => {
+                const pendingQty = o.orderedQty - o.receivedQty;
+                const rowHtml = `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="p-4 font-bold text-slate-800 font-mono tracking-wider">${escapeHTML(o.poNumber)}</td>
+                        <td class="p-4 text-slate-600 font-mono">${escapeHTML(o.prNumber)}</td>
+                        <td class="p-4 text-slate-500 font-mono text-[11px]">${escapeHTML(o.productId)}</td>
+                        <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
+                        <td class="p-4 text-center text-slate-500">${escapeHTML(o.orderDate)}</td>
+                        <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
+                        <td class="p-4 text-center text-slate-500">${o.lastReceivedDate ? escapeHTML(o.lastReceivedDate) : '-'}</td>
+                        <td class="p-4 text-center font-bold text-emerald-600">${o.receivedQty}</td>
+                        <td class="p-4 text-center font-extrabold text-rose-600 bg-rose-50/30">${pendingQty}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="handleReceiveGoods('${escapeForJS(o.poNumber)}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] transition shadow-sm hover:shadow-md active:scale-95">
+                                <i class="fa-solid fa-square-check"></i> รับสินค้า
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+        }
+
+        function renderDashboardOrdersTable() {
+            const tableBody = document.getElementById('dashboardOrdersTableBody');
+            if (!tableBody) return;
+
+            const orders = db.purchaseOrders || [];
+            let filtered = orders;
+
+            // Filter by search query
+            if (dashboardOrdersSearchQuery) {
+                filtered = filtered.filter(o => 
+                    o.poNumber.toLowerCase().includes(dashboardOrdersSearchQuery) ||
+                    o.prNumber.toLowerCase().includes(dashboardOrdersSearchQuery) ||
+                    o.productId.toLowerCase().includes(dashboardOrdersSearchQuery) ||
+                    o.productName.toLowerCase().includes(dashboardOrdersSearchQuery)
+                );
+            }
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="p-12 text-center text-slate-400">
+                            <div class="flex flex-col items-center justify-center">
+                                <i class="fa-solid fa-receipt text-slate-200 text-4xl mb-2"></i>
+                                <p class="text-sm font-bold text-slate-500">ไม่พบข้อมูลคำสั่งซื้อ</p>
+                                <p class="text-xs text-slate-400 mt-0.5">กรุณาปรับคำค้นหาหรือเพิ่มคำสั่งซื้อเข้าระบบ</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tableBody.innerHTML = '';
+            filtered.forEach(o => {
+                let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
+                if (o.status === 'รออนุมัติ') badgeColor = 'bg-amber-50 text-amber-700 border border-amber-200';
+                else if (o.status === 'สั่งแล้ว') badgeColor = 'bg-blue-50 text-blue-700 border border-blue-200';
+                else if (o.status === 'ค้างส่ง') badgeColor = 'bg-red-50 text-red-700 border border-red-200';
+                else if (o.status === 'ได้รับครบ') badgeColor = 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+
+                const rowHtml = `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="p-4 font-bold text-slate-800 font-mono tracking-wider">${escapeHTML(o.poNumber)}</td>
+                        <td class="p-4 text-slate-600 font-mono">${escapeHTML(o.prNumber)}</td>
+                        <td class="p-4 text-slate-500 font-mono text-[11px]">${escapeHTML(o.productId)}</td>
+                        <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
+                        <td class="p-4 text-center text-slate-500">${escapeHTML(o.orderDate)}</td>
+                        <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
+                        <td class="p-4 text-center">
+                            <span class="inline-block px-2.5 py-0.5 text-[10px] font-bold rounded-md uppercase ${badgeColor}">
+                                ${escapeHTML(o.status)}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+        }
+
+        function handleReceiveGoods(poNumber) {
+            const orders = db.purchaseOrders || [];
+            const order = orders.find(o => o.poNumber === poNumber);
+            if (!order) {
+                showToast("ไม่พบรายการใบสั่งซื้อนี้", "error");
+                return;
+            }
+
+            const pendingQty = order.orderedQty - order.receivedQty;
+
+            Swal.fire({
+                title: '<i class="fa-solid fa-boxes-packing text-emerald-500 mr-2"></i>บันทึกการรับสินค้าเข้าคลัง',
+                html: `
+                    <div class="space-y-4 text-left text-xs">
+                        <div class="bg-slate-50 p-3 rounded-xl border border-gray-150 flex gap-2.5 items-center mb-3">
+                            <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                                <i class="fa-solid fa-receipt"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-[10px] text-gray-400">เลขที่ใบสั่งซื้อ (PO)</p>
+                                <p class="font-mono font-bold text-slate-700 truncate">${escapeHTML(order.poNumber)} (${escapeHTML(order.prNumber)})</p>
+                            </div>
+                        </div>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-gray-150 mb-3">
+                            <p class="text-[10px] text-gray-400">รายการอะไหล่</p>
+                            <p class="font-bold text-slate-700 mt-0.5">${escapeHTML(order.productName)}</p>
+                            <p class="text-[10px] text-slate-500 font-mono mt-0.5">รหัส: ${escapeHTML(order.productId)}</p>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3 text-center mb-4">
+                            <div class="bg-white border border-slate-200 p-2.5 rounded-xl">
+                                <p class="text-[9px] text-slate-400 font-semibold uppercase">จำนวนที่สั่ง</p>
+                                <p class="text-base font-extrabold text-slate-700 mt-0.5">${order.orderedQty}</p>
+                            </div>
+                            <div class="bg-white border border-slate-200 p-2.5 rounded-xl">
+                                <p class="text-[9px] text-emerald-500 font-semibold uppercase">รับเข้าแล้ว</p>
+                                <p class="text-base font-extrabold text-emerald-600 mt-0.5">${order.receivedQty}</p>
+                            </div>
+                            <div class="bg-white border border-slate-200 p-2.5 rounded-xl">
+                                <p class="text-[9px] text-rose-500 font-semibold uppercase">ยอดค้างรับ</p>
+                                <p class="text-base font-extrabold text-rose-600 mt-0.5">${pendingQty}</p>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-gray-600 mb-1.5">จำนวนสินค้าที่ได้รับครั้งนี้ (ชิ้น)</label>
+                            <input type="number" id="swal-receive-qty" min="1" max="${pendingQty}" value="${pendingQty}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวนชิ้นที่ส่งมอบ">
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: '<i class="fa-solid fa-save mr-1.5"></i>บันทึกการรับเข้า',
+                confirmButtonColor: '#10b981',
+                showCancelButton: true,
+                cancelButtonText: 'ยกเลิก',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+                focusConfirm: false,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                },
+                preConfirm: () => {
+                    const receiveInput = document.getElementById('swal-receive-qty');
+                    const receiveVal = parseInt(receiveInput.value);
+                    if (isNaN(receiveVal) || receiveVal <= 0) {
+                        Swal.showValidationMessage('กรุณากรอกจำนวนที่ถูกต้อง (มากกว่า 0)');
+                        return false;
+                    }
+                    if (receiveVal > pendingQty) {
+                        Swal.showValidationMessage(`จำนวนรับเข้าเกินยอดค้างส่ง (${pendingQty} ชิ้น)`);
+                        return false;
+                    }
+                    return receiveVal;
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed && result.value) {
+                    const receivedAmount = result.value;
+                    
+                    showLoading("กำลังบันทึกการรับสินค้า...");
+                    try {
+                        const payload = {
+                            poNumber: poNumber,
+                            receivedAmount: receivedAmount,
+                            requester: currentUser ? currentUser.fullName : "เจ้าหน้าที่สโตว์",
+                            department: currentUser ? currentUser.department : "จัดซื้อ"
+                        };
+                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'receivePurchaseGoods', payload: payload })
+                        });
+                        const resultData = await res.json();
+                        if (resultData.status === 'success') {
+                            showToast(`บันทึกรับสินค้าสำเร็จ +${receivedAmount} ชิ้น!`, 'success');
+                            await fetchData(true); // force refresh database
+                            
+                            // Re-render current view depending on which element is open
+                            const receiveTableBody = document.getElementById('receiveTableBody');
+                            if (receiveTableBody) {
+                                renderReceiveTable();
+                            }
+                            const dashboardOrdersTableBody = document.getElementById('dashboardOrdersTableBody');
+                            if (dashboardOrdersTableBody) {
+                                renderDashboardOrdersTable();
+                            }
+                        } else {
+                            showToast("เกิดข้อผิดพลาด: " + resultData.message, "error");
+                        }
+                    } catch (error) {
+                        showToast("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + error.message, "error");
+                    }
+                    hideLoading();
+                }
+            });
+        }
+
+        function handleDraftOrdersSearch(val) {
+            draftOrdersSearchQuery = val.trim().toLowerCase();
+            renderDraftOrdersTable();
+        }
+
+        function renderDraftOrdersTable() {
+            const tableBody = document.getElementById('draftOrdersTableBody');
+            if (!tableBody) return;
+
+            const orders = db.purchaseOrders || [];
+            let filtered = orders.filter(o => o.status === "เตรียมสั่ง");
+
+            if (draftOrdersSearchQuery) {
+                filtered = filtered.filter(o => 
+                    o.productId.toLowerCase().includes(draftOrdersSearchQuery) ||
+                    o.productName.toLowerCase().includes(draftOrdersSearchQuery)
+                );
+            }
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="p-12 text-center text-slate-400">
+                            <div class="flex flex-col items-center justify-center">
+                                <i class="fa-solid fa-file-circle-plus text-slate-200 text-4xl mb-2"></i>
+                                <p class="text-sm font-bold text-slate-500">ไม่มีรายการเตรียมสั่งซื้อ</p>
+                                <p class="text-xs text-slate-400 mt-0.5">คลิกที่ปุ่ม "เพิ่มรายการ" เพื่อเริ่มบันทึกอะไหล่ที่ต้องการขอสั่งซื้อ</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tableBody.innerHTML = '';
+            filtered.forEach(o => {
+                const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                const unit = prod ? prod.unit : 'ชิ้น';
+                const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+
+                const rowHtml = `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="p-4 font-mono text-[11px] text-slate-500">${escapeHTML(o.productId)}</td>
+                        <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
+                        <td class="p-4 text-slate-600">${escapeHTML(supplier)}</td>
+                        <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
+                        <td class="p-4 text-center text-slate-500">${escapeHTML(unit)}</td>
+                        <td class="p-4 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="handleEditOrderDraft('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition" title="แก้ไขจำนวน">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                                <button onclick="handleDeleteOrderDraft('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition" title="ลบรายการ">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+        }
+
+        let currentSelectedSwalProduct = null;
+
+        window.onSwalProductSearchInput = function(val) {
+            const resultsDiv = document.getElementById('swal-prod-results');
+            if (!resultsDiv) return;
+
+            const q = val.trim().toLowerCase();
+            if (!q) {
+                resultsDiv.classList.add('hidden');
+                resultsDiv.innerHTML = '';
+                return;
+            }
+
+            const products = db.products || [];
+            const matches = products.filter(p => {
+                const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+                if (isCancelled) return false;
+
+                const idStr = String(p.id || '').toLowerCase();
+                const nameStr = String(p.name || '').toLowerCase();
+                return idStr.includes(q) || nameStr.includes(q);
+            }).slice(0, 8);
+
+            if (matches.length === 0) {
+                resultsDiv.classList.remove('hidden');
+                resultsDiv.innerHTML = `<div class="p-3 text-center text-slate-400 text-xs">ไม่พบอะไหล่ที่ตรงกัน</div>`;
+                return;
+            }
+
+            resultsDiv.classList.remove('hidden');
+            resultsDiv.innerHTML = matches.map(p => `
+                <div onclick="selectSwalProduct('${escapeForJS(String(p.id))}')" class="p-2.5 hover:bg-slate-50 cursor-pointer transition text-xs flex flex-col text-left">
+                    <div class="font-bold text-slate-700">${escapeHTML(String(p.name))}</div>
+                    <div class="text-[10px] text-slate-400 font-mono mt-0.5">${escapeHTML(String(p.id))}</div>
+                </div>
+            `).join('');
+        };
+
+        window.selectSwalProduct = function(productId) {
+            const products = db.products || [];
+            const prod = products.find(p => String(p.id).trim() === String(productId).trim());
+            if (!prod) return;
+
+            currentSelectedSwalProduct = prod;
+
+            const infoDiv = document.getElementById('swal-selected-prod-info');
+            if (infoDiv) infoDiv.classList.remove('hidden');
+
+            const infoId = document.getElementById('info-p-id');
+            const infoName = document.getElementById('info-p-name');
+            const infoUnit = document.getElementById('info-p-unit');
+            const infoSupplier = document.getElementById('info-p-supplier');
+
+            if (infoId) infoId.innerText = String(prod.id);
+            if (infoName) infoName.innerText = String(prod.name);
+            if (infoUnit) infoUnit.innerText = String(prod.unit || 'ชิ้น');
+            if (infoSupplier) infoSupplier.innerText = String(prod.supplier || 'ไม่ระบุ');
+
+            const searchInput = document.getElementById('swal-prod-search');
+            if (searchInput) searchInput.value = String(prod.name);
+
+            const resultsDiv = document.getElementById('swal-prod-results');
+            if (resultsDiv) {
+                resultsDiv.classList.add('hidden');
+                resultsDiv.innerHTML = '';
+            }
+        };
+
+        function handleAddOrderDraft() {
+            Swal.fire({
+                title: '<i class="fa-solid fa-file-circle-plus text-blue-600 mr-2"></i>เพิ่มรายการเตรียมสั่งซื้อ',
+                html: `
+                    <div class="space-y-3 text-left text-xs">
+                        <div>
+                            <label class="block font-semibold text-gray-600 mb-1.5 text-xs">ค้นหาอะไหล่</label>
+                            <input type="text" id="swal-prod-search" oninput="onSwalProductSearchInput(this.value)" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="พิมพ์รหัส หรือชื่อสินค้าเพื่อค้นหา...">
+                            <div id="swal-prod-results" class="border border-slate-200 rounded-xl overflow-hidden mt-1.5 hidden max-h-40 overflow-y-auto bg-white shadow-lg text-left divide-y divide-slate-100 z-50 relative"></div>
+                        </div>
+
+                        <div id="swal-selected-prod-info" class="bg-slate-50 border border-slate-200 rounded-xl p-3 mt-3 hidden text-left text-[11px] text-slate-600">
+                            <p class="font-bold text-slate-800 mb-1 text-[11px]">อะไหล่ที่เลือก:</p>
+                            <div class="space-y-1">
+                                <div><span class="text-slate-400">รหัสสินค้า:</span> <span id="info-p-id" class="font-bold font-mono text-slate-700"></span></div>
+                                <div><span class="text-slate-400">ชื่อสินค้า:</span> <span id="info-p-name" class="font-bold text-slate-700"></span></div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold text-gray-600 mb-1.5 text-xs">จำนวนที่ต้องการสั่งซื้อ (ชิ้น)</label>
+                            <input type="number" id="swal-order-qty" min="1" value="1" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวนชิ้น">
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: '<i class="fa-solid fa-save mr-1.5"></i>บันทึกรายการ',
+                confirmButtonColor: '#2563eb',
+                showCancelButton: true,
+                cancelButtonText: 'ยกเลิก',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+                focusConfirm: false,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                },
+                didOpen: () => {
+                    currentSelectedSwalProduct = null;
+                },
+                preConfirm: () => {
+                    if (!currentSelectedSwalProduct) {
+                        Swal.showValidationMessage('กรุณาค้นหาและเลือกอะไหล่ก่อน');
+                        return false;
+                    }
+                    const qtyInput = document.getElementById('swal-order-qty');
+                    const qtyVal = parseInt(qtyInput.value);
+                    if (isNaN(qtyVal) || qtyVal <= 0) {
+                        Swal.showValidationMessage('กรุณากรอกจำนวนที่ถูกต้อง (มากกว่า 0)');
+                        return false;
+                    }
+                    return {
+                        productId: currentSelectedSwalProduct.id,
+                        productName: currentSelectedSwalProduct.name,
+                        orderedQty: qtyVal
+                    };
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed && result.value) {
+                    const data = result.value;
+                    showLoading("กำลังเพิ่มรายการเตรียมสั่งซื้อ...");
+                    try {
+                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'addPurchaseOrderDraft', payload: data })
+                        });
+                        const resData = await res.json();
+                        if (resData.status === 'success') {
+                            showToast("เพิ่มรายการเตรียมสั่งซื้อสำเร็จ!", "success");
+                            await fetchData(true);
+                            renderDraftOrdersTable();
+                        } else {
+                            showToast("เกิดข้อผิดพลาด: " + resData.message, "error");
+                        }
+                    } catch (error) {
+                        showToast("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + error.message, "error");
+                    }
+                    hideLoading();
+                }
+            });
+        }
+
+        function handleEditOrderDraft(poNumber, productId) {
+            const orders = db.purchaseOrders || [];
+            const order = orders.find(o => poNumber ? o.poNumber === poNumber : (o.productId === productId && o.status === "เตรียมสั่ง"));
+            if (!order) return;
+
+            Swal.fire({
+                title: '<i class="fa-solid fa-pen-to-square text-blue-600 mr-2"></i>แก้ไขจำนวนสั่งซื้อ',
+                html: `
+                    <div class="text-left text-xs space-y-2">
+                        <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-150">
+                            <p class="font-bold text-slate-800">${escapeHTML(order.productName)}</p>
+                            <p class="text-[10px] text-slate-400 font-mono mt-0.5">รหัสสินค้า: ${escapeHTML(order.productId)}</p>
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-gray-600 mb-1.5">จำนวนที่สั่งใหม่ (ชิ้น)</label>
+                            <input type="number" id="swal-edit-qty" min="1" value="${order.orderedQty}" class="swal2-input !mx-0 !w-full !text-xs !h-9">
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: '<i class="fa-solid fa-save mr-1.5"></i>บันทึกแก้ไข',
+                confirmButtonColor: '#2563eb',
+                showCancelButton: true,
+                cancelButtonText: 'ยกเลิก',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                },
+                preConfirm: () => {
+                    const qtyInput = document.getElementById('swal-edit-qty');
+                    const qtyVal = parseInt(qtyInput.value);
+                    if (isNaN(qtyVal) || qtyVal <= 0) {
+                        Swal.showValidationMessage('กรุณากรอกจำนวนที่ถูกต้อง');
+                        return false;
+                    }
+                    return qtyVal;
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed && result.value) {
+                    const qtyVal = result.value;
+                    showLoading("กำลังแก้ไขรายการ...");
+                    try {
+                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'editPurchaseOrderDraft', payload: { poNumber: poNumber, productId: productId, orderedQty: qtyVal } })
+                        });
+                        const resData = await res.json();
+                        if (resData.status === 'success') {
+                            showToast("แก้ไขจำนวนสั่งซื้อสำเร็จ", "success");
+                            await fetchData(true);
+                            renderDraftOrdersTable();
+                        } else {
+                            showToast("เกิดข้อผิดพลาด: " + resData.message, "error");
+                        }
+                    } catch (error) {
+                        showToast("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้", "error");
+                    }
+                    hideLoading();
+                }
+            });
+        }
+
+        function handleDeleteOrderDraft(poNumber, productId) {
+            Swal.fire({
+                title: 'ยืนยันการลบรายการ?',
+                text: "คุณแน่ใจว่าต้องการลบรายการเตรียมสั่งซื้อนี้ออกจากฐานข้อมูล?",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#6b7280',
+                confirmButtonText: 'ยืนยันการลบ',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    showLoading("กำลังลบรายการ...");
+                    try {
+                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'deletePurchaseOrderDraft', payload: { poNumber: poNumber, productId: productId } })
+                        });
+                        const resData = await res.json();
+                        if (resData.status === 'success') {
+                            showToast("ลบรายการสำเร็จ", "success");
+                            await fetchData(true);
+                            renderDraftOrdersTable();
+                            renderManageOrdersTable();
+                        } else {
+                            showToast("เกิดข้อผิดพลาด: " + resData.message, "error");
+                        }
+                    } catch (error) {
+                        showToast("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้", "error");
+                    }
+                    hideLoading();
+                }
+            });
+        }
+
+        function exportDraftOrdersToExcel() {
+            const orders = db.purchaseOrders || [];
+            const draftOrders = orders.filter(o => o.status === "เตรียมสั่ง");
+            if (draftOrders.length === 0) {
+                showToast("ไม่มีรายการเตรียมสั่งสำหรับการส่งออก", "warning");
+                return;
+            }
+
+            let csvContent = "\uFEFF"; // UTF-8 BOM so Excel opens with correct Thai characters
+            csvContent += '"รหัสสินค้า","ชื่อสินค้า","จำนวนที่สั่ง","หน่วย","Supplier"\n';
+
+            draftOrders.forEach(o => {
+                const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                const unit = prod ? prod.unit : 'ชิ้น';
+                const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+
+                const escapedName = o.productName.replace(/"/g, '""');
+                const escapedSupplier = supplier.replace(/"/g, '""');
+                const escapedUnit = unit.replace(/"/g, '""');
+
+                csvContent += `"${o.productId}","${escapedName}",${o.orderedQty},"${escapedUnit}","${escapedSupplier}"\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const today = new Date();
+            const dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+            
+            link.setAttribute("href", URL.createObjectURL(blob));
+            link.setAttribute("download", `Draft_Purchase_Orders_${dateStr}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("ส่งออกข้อมูลสำเร็จ", "success");
+        }
+
+        function handleManageOrdersSearch(val) {
+            manageOrdersSearchQuery = val.trim().toLowerCase();
+            renderManageOrdersTable();
+        }
+
+        function handleManageOrdersSupplierFilter(val) {
+            manageOrdersSupplierFilter = val.trim();
+            renderManageOrdersTable();
+        }
+
+        function renderManageOrdersTable() {
+            const tableBody = document.getElementById('manageOrdersTableBody');
+            if (!tableBody) return;
+
+            const orders = db.purchaseOrders || [];
+            
+            // Filter: only status "เตรียมสั่ง" and "รออนุมัติ"
+            let filtered = orders.filter(o => o.status === "เตรียมสั่ง" || o.status === "รออนุมัติ");
+
+            // Filter by Supplier dropdown
+            if (manageOrdersSupplierFilter) {
+                filtered = filtered.filter(o => {
+                    const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+                    return supplier === manageOrdersSupplierFilter;
+                });
+            }
+
+            // Filter by search query (PO Number, PR Number, รหัสสินค้า, ชื่อสินค้า)
+            if (manageOrdersSearchQuery) {
+                filtered = filtered.filter(o => 
+                    (o.poNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    (o.prNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    (o.productId || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    (o.productName || '').toLowerCase().includes(manageOrdersSearchQuery)
+                );
+            }
+
+            if (filtered.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="p-12 text-center text-slate-400">
+                            <div class="flex flex-col items-center justify-center">
+                                <i class="fa-solid fa-tasks text-slate-200 text-4xl mb-2"></i>
+                                <p class="text-sm font-bold text-slate-500">ไม่มีใบสั่งซื้อที่รอการอนุมัติหรือเตรียมสั่ง</p>
+                                <p class="text-xs text-slate-400 mt-0.5">รายการจัดซื้อทั้งหมดได้รับการดำเนินงานเรียบร้อยแล้ว</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            // Grouping logic:
+            // 1. Unprocessed items: status === "เตรียมสั่ง" (or poNumber starts with "PO-DRF-")
+            const unprocessed = filtered.filter(o => o.status === "เตรียมสั่ง" || (o.poNumber && o.poNumber.indexOf("PO-DRF-") === 0));
+            // 2. Processed items: status === "รออนุมัติ" (and not starting with "PO-DRF-")
+            const processed = filtered.filter(o => o.status === "รออนุมัติ" && (!o.poNumber || o.poNumber.indexOf("PO-DRF-") !== 0));
+
+            tableBody.innerHTML = '';
+
+            // Render Section 1: Unprocessed items (Ungrouped)
+            if (unprocessed.length > 0) {
+                // Section Header Row
+                const headerRow = `
+                    <tr class="bg-blue-50/50 text-blue-800 font-bold border-y border-blue-100">
+                        <td colspan="9" class="px-4 py-2 text-xs">
+                            <div class="flex items-center gap-1.5">
+                                <i class="fa-solid fa-folder-open text-blue-500"></i>
+                                รายการใหม่ (ยังไม่ได้ดำเนินการจัดกลุ่ม)
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', headerRow);
+
+                unprocessed.forEach(o => {
+                    renderRow(o);
+                });
+            }
+
+            // Render Section 2: Grouped by Supplier
+            if (processed.length > 0) {
+                // Group processed items by supplier
+                const groupedBySupplier = {};
+                processed.forEach(o => {
+                    const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+                    if (!groupedBySupplier[supplier]) {
+                        groupedBySupplier[supplier] = [];
+                    }
+                    groupedBySupplier[supplier].push(o);
+                });
+
+                // Section Header Row
+                const headerRow = `
+                    <tr class="bg-slate-100 text-slate-700 font-bold border-y border-slate-200">
+                        <td colspan="9" class="px-4 py-2 text-xs">
+                            <div class="flex items-center gap-1.5">
+                                <i class="fa-solid fa-boxes-packing text-slate-500"></i>
+                                รายการสั่งซื้อแยกตามซัพพลายเออร์ (จัดกลุ่ม)
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', headerRow);
+
+                // Render each supplier group
+                Object.keys(groupedBySupplier).sort().forEach(supplier => {
+                    const supplierHeaderRow = `
+                        <tr class="bg-amber-50/40 text-amber-800 font-bold border-b border-amber-100">
+                            <td colspan="9" class="px-6 py-1.5 text-[10px] uppercase tracking-wider">
+                                <i class="fa-solid fa-truck-field mr-1.5"></i> Supplier: ${escapeHTML(supplier)}
+                            </td>
+                        </tr>
+                    `;
+                    tableBody.insertAdjacentHTML('beforeend', supplierHeaderRow);
+
+                    groupedBySupplier[supplier].forEach(o => {
+                        renderRow(o);
+                    });
+                });
+            }
+
+            // Helper to render a single row
+            function renderRow(o) {
+                const dateStr = o.orderDate || '-';
+                const displayPo = o.poNumber.indexOf("PO-DRF-") === 0 ? `<span class="text-slate-400 italic">ดราฟต์</span>` : escapeHTML(o.poNumber);
+                const displayPr = o.prNumber === "PR-DRAFT" ? `<span class="text-slate-400 italic">ดราฟต์</span>` : escapeHTML(o.prNumber);
+
+                // Determine unit cost and total cost. Fall back to db.products cost if 0
+                let cost = parseFloat(o.unitCost) || 0;
+                if (cost === 0) {
+                    const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    cost = prod ? (parseFloat(prod.cost) || 0) : 0;
+                }
+                const total = o.orderedQty * cost;
+
+                const rowHtml = `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="p-4 text-slate-500">${escapeHTML(dateStr)}</td>
+                        <td class="p-4 font-semibold text-slate-700">${displayPo}</td>
+                        <td class="p-4 font-mono text-[11px] text-slate-500">${displayPr}</td>
+                        <td class="p-4 font-mono text-[11px] text-slate-500">${escapeHTML(o.productId)}</td>
+                        <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
+                        <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
+                        <td class="p-4 text-right text-slate-600 font-mono">฿${cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-4 text-right text-slate-800 font-bold font-mono">฿${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-4 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="handleUpdateOrderDraft('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 hover:text-amber-800 font-bold rounded-lg text-[10px] transition border border-amber-200 shadow-sm active:scale-95">
+                                    <i class="fa-solid fa-pen-to-square"></i> อัพเดท
+                                </button>
+                                <button onclick="handleDeleteOrderDraft('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 font-bold rounded-lg text-[10px] transition border border-rose-200 shadow-sm active:scale-95" title="ลบรายการ">
+                                    <i class="fa-solid fa-trash-can"></i> ลบ
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', rowHtml);
+            }
+        }
+
+        window.recalculateSwalTotalCost = function() {
+            const qtyInput = document.getElementById('swal-update-qty');
+            const costInput = document.getElementById('swal-update-cost');
+            const totalSpan = document.getElementById('swal-update-total');
+            if (!qtyInput || !costInput || !totalSpan) return;
+
+            const qty = parseFloat(qtyInput.value) || 0;
+            const cost = parseFloat(costInput.value) || 0;
+            const total = qty * cost;
+            totalSpan.innerText = '฿' + total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        };
+
+        function handleUpdateOrderDraft(poNumber, productId) {
+            const orders = db.purchaseOrders || [];
+            const order = orders.find(o => poNumber ? o.poNumber === poNumber : (o.productId === productId && o.status === "เตรียมสั่ง"));
+            if (!order) return;
+
+            const prod = db.products.find(p => String(p.id).trim() === String(order.productId).trim());
+            const currentSupplier = order.supplier || (prod ? (prod.supplier || '') : '');
+
+            let initialCost = parseFloat(order.unitCost) || 0;
+            if (initialCost === 0 && prod) {
+                initialCost = parseFloat(prod.cost) || 0;
+            }
+
+            const initialPo = order.poNumber.indexOf("PO-DRF-") === 0 ? '' : order.poNumber;
+            const initialPr = order.prNumber === "PR-DRAFT" ? '' : order.prNumber;
+
+            Swal.fire({
+                title: '<i class="fa-solid fa-tasks text-amber-600 mr-2"></i>อัปเดตใบสั่งซื้อ',
+                html: `
+                    <div class="space-y-4 text-left text-xs">
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                            <div class="col-span-2">
+                                <span class="text-slate-400 block mb-0.5">ชื่อสินค้า:</span>
+                                <span class="font-bold text-slate-800 text-xs">${escapeHTML(order.productName)}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block mb-0.5">รหัสสินค้า:</span>
+                                <span class="font-bold font-mono text-slate-800">${escapeHTML(order.productId)}</span>
+                            </div>
+                            <div>
+                                <span class="text-slate-400 block mb-0.5">ราคารวม (คำนวน):</span>
+                                <span id="swal-update-total" class="font-extrabold text-blue-600 text-xs">฿0.00</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">จำนวนที่สั่ง</label>
+                                <input type="number" id="swal-update-qty" min="1" value="${order.orderedQty}" oninput="recalculateSwalTotalCost()" class="swal2-input !mx-0 !w-full !text-xs !h-9">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">ราคาต่อหน่วย (บาท)</label>
+                                <input type="number" id="swal-update-cost" min="0" step="0.01" value="${initialCost}" oninput="recalculateSwalTotalCost()" class="swal2-input !mx-0 !w-full !text-xs !h-9">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">Supplier</label>
+                                <input type="text" id="swal-update-supplier" value="${escapeHTML(currentSupplier)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุซัพพลายเออร์">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">สถานะ</label>
+                                <select id="swal-update-status" class="swal2-select !mx-0 !w-full !text-xs !h-9 !border-slate-200 !rounded-xl !px-3 focus:!border-blue-500">
+                                    <option value="เตรียมสั่ง" ${order.status === 'เตรียมสั่ง' ? 'selected' : ''}>เตรียมสั่ง</option>
+                                    <option value="รออนุมัติ" ${order.status === 'รออนุมัติ' ? 'selected' : ''}>รออนุมัติ</option>
+                                    <option value="สั่งแล้ว" ${order.status === 'สั่งแล้ว' ? 'selected' : ''}>สั่งแล้ว (นำออกจากหน้านี้)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">PO Number (เลขที่ใบสั่งซื้อ)</label>
+                                <input type="text" id="swal-update-po" value="${escapeHTML(initialPo)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุ PO (เว้นว่างไว้เพื่อเป็นดราฟต์)">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">PR Number (เลขที่ขอซื้อ)</label>
+                                <input type="text" id="swal-update-pr" value="${escapeHTML(initialPr)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุ PR (เว้นว่างไว้เพื่อเป็นดราฟต์)">
+                            </div>
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: '<i class="fa-solid fa-save mr-1.5"></i>บันทึกการอัปเดต',
+                confirmButtonColor: '#d97706',
+                showCancelButton: true,
+                cancelButtonText: 'ยกเลิก',
+                cancelButtonColor: '#6b7280',
+                reverseButtons: true,
+                focusConfirm: false,
+                customClass: {
+                    popup: 'rounded-2xl w-full max-w-lg',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                },
+                didOpen: () => {
+                    recalculateSwalTotalCost();
+                },
+                preConfirm: () => {
+                    const qtyInput = document.getElementById('swal-update-qty');
+                    const costInput = document.getElementById('swal-update-cost');
+                    const supplierInput = document.getElementById('swal-update-supplier');
+                    const statusSelect = document.getElementById('swal-update-status');
+                    const poInput = document.getElementById('swal-update-po');
+                    const prInput = document.getElementById('swal-update-pr');
+
+                    const qtyVal = parseFloat(qtyInput.value);
+                    const costVal = parseFloat(costInput.value) || 0;
+                    if (isNaN(qtyVal) || qtyVal <= 0) {
+                        Swal.showValidationMessage('กรุณากรอกจำนวนที่สั่งซื้อให้ถูกต้อง');
+                        return false;
+                    }
+                    if (costVal < 0) {
+                        Swal.showValidationMessage('กรุณากรอกราคาต่อหน่วยให้ถูกต้อง');
+                        return false;
+                    }
+
+                    return {
+                        originalPoNumber: order.poNumber,
+                        newPoNumber: poInput.value.trim(),
+                        newPrNumber: prInput.value.trim(),
+                        orderedQty: qtyVal,
+                        unitCost: costVal,
+                        status: statusSelect.value,
+                        productId: order.productId,
+                        newSupplier: supplierInput.value.trim()
+                    };
+                }
+            }).then(async (result) => {
+                if (result.isConfirmed && result.value) {
+                    showLoading("กำลังอัปเดตใบสั่งซื้อ...");
+                    try {
+                        const res = await fetch(API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'updatePurchaseOrderDraft', payload: result.value })
+                        });
+                        const resData = await res.json();
+                        if (resData.status === 'success') {
+                            showToast("อัปเดตใบสั่งซื้อสำเร็จ!", "success");
+                            await fetchData(true);
+                            renderManageOrdersTable();
+                        } else {
+                            showToast("เกิดข้อผิดพลาด: " + resData.message, "error");
+                        }
+                    } catch (error) {
+                        showToast("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + error.message, "error");
+                    }
+                    hideLoading();
+                }
+            });
+        }
+
+        function handleHistorySearch(val) {
+            purchaseHistorySearchQuery = val.trim().toLowerCase();
+            renderPurchaseHistoryCards();
+        }
+
+        function handleHistoryCategoryFilter(val) {
+            purchaseHistoryCategoryFilter = val.trim();
+            renderPurchaseHistoryCards();
+        }
+
+        function handleHistoryGroupFilter(val) {
+            purchaseHistoryGroupFilter = val.trim();
+            renderPurchaseHistoryCards();
+        }
+
+        function renderPurchaseHistoryCards() {
+            const container = document.getElementById('purchaseHistoryCardsContainer');
+            if (!container) return;
+
+            const orders = db.purchaseOrders || [];
+            const products = db.products || [];
+
+            // Filter orders: only ordered items (exclude drafts, wait-for-approvals)
+            let processedOrders = orders.filter(o => o.status === "สั่งแล้ว" || o.status === "ได้รับครบ" || o.status === "ค้างส่ง");
+
+            // Filter by search query (PO, PR, Product ID, Product Name)
+            if (purchaseHistorySearchQuery) {
+                processedOrders = processedOrders.filter(o => 
+                    (o.poNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    (o.prNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    (o.productId || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    (o.productName || '').toLowerCase().includes(purchaseHistorySearchQuery)
+                );
+            }
+
+            // Group processed orders by productId
+            const grouped = {};
+            processedOrders.forEach(o => {
+                if (!grouped[o.productId]) {
+                    grouped[o.productId] = [];
+                }
+                grouped[o.productId].push(o);
+            });
+
+            // Map products matching filters
+            let cardData = [];
+            Object.keys(grouped).forEach(prodId => {
+                const prod = products.find(p => String(p.id).trim() === String(prodId).trim());
+                if (!prod) return;
+
+                // Category filter
+                if (purchaseHistoryCategoryFilter && prod.category !== purchaseHistoryCategoryFilter) return;
+
+                // Group filter
+                if (purchaseHistoryGroupFilter && prod.group !== purchaseHistoryGroupFilter) return;
+
+                // Calculate stats
+                const itemOrders = grouped[prodId];
+                const orderCount = itemOrders.length;
+                let totalVal = 0;
+                itemOrders.forEach(o => {
+                    let cost = parseFloat(o.unitCost) || 0;
+                    if (cost === 0) {
+                        cost = parseFloat(prod.cost) || 0;
+                    }
+                    totalVal += (o.orderedQty * cost);
+                });
+
+                cardData.push({
+                    productId: prodId,
+                    productName: prod.name,
+                    unit: prod.unit || 'ชิ้น',
+                    orderCount: orderCount,
+                    totalVal: totalVal,
+                    orders: itemOrders
+                });
+            });
+
+            if (cardData.length === 0) {
+                container.innerHTML = `
+                    <div class="border border-slate-150 rounded-2xl p-8 bg-slate-50/50 flex flex-col items-center justify-center text-center py-12">
+                        <i class="fa-solid fa-clock-rotate-left text-slate-300 text-4xl mb-3"></i>
+                        <p class="text-sm font-bold text-slate-600">ไม่พบประวัติการสั่งซื้อ</p>
+                        <p class="text-xs text-slate-400 mt-1">ไม่มีข้อมูลประวัติใบสั่งซื้อที่ตรงกับเงื่อนไขการค้นหา</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = '';
+            cardData.forEach((card, index) => {
+                const cardId = `history-card-${index}`;
+                const detailId = `history-detail-${index}`;
+                const arrowId = `history-arrow-${index}`;
+
+                // Construct orders rows HTML
+                let ordersHtml = card.orders.map(o => {
+                    const dateStr = o.orderDate || '-';
+                    const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    let cost = parseFloat(o.unitCost) || 0;
+                    if (cost === 0 && prod) {
+                        cost = parseFloat(prod.cost) || 0;
+                    }
+                    const total = o.orderedQty * cost;
+                    const supplier = prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ';
+
+                    return `
+                        <tr class="hover:bg-slate-50/50 transition-colors">
+                            <td class="p-3 text-slate-500">${escapeHTML(dateStr)}</td>
+                            <td class="p-3 font-semibold text-slate-700">${escapeHTML(o.poNumber)}</td>
+                            <td class="p-3 font-mono text-[11px] text-slate-500">${escapeHTML(o.prNumber)}</td>
+                            <td class="p-3 text-slate-600">${escapeHTML(supplier)}</td>
+                            <td class="p-3 text-center font-bold text-slate-700">${o.orderedQty}</td>
+                            <td class="p-3 text-right text-slate-600 font-mono">฿${cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td class="p-3 text-right text-slate-800 font-bold font-mono">฿${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const cardHtml = `
+                    <div class="bg-white border border-slate-150 rounded-2xl shadow-sm hover:shadow-md transition overflow-hidden">
+                        <!-- Card Header (Clickable) -->
+                        <div onclick="toggleHistoryCardDetail('${detailId}', '${arrowId}')" class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition duration-150 select-none">
+                            <div class="flex items-start gap-4">
+                                <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
+                                    <i class="fa-solid fa-boxes-packing text-base"></i>
+                                </div>
+                                <div class="text-left">
+                                    <span class="inline-block px-2.5 py-0.5 bg-slate-100 text-slate-600 font-bold rounded-lg text-[10px] font-mono mb-1">${escapeHTML(card.productId)}</span>
+                                    <h4 class="text-sm font-bold text-slate-800 leading-tight">${escapeHTML(card.productName)}</h4>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-6">
+                                <!-- Stats -->
+                                <div class="text-right hidden sm:block">
+                                    <span class="text-[10px] text-slate-400 block font-semibold uppercase">สั่งซื้อแล้ว</span>
+                                    <span class="font-bold text-slate-800 text-sm">${card.orderCount} ครั้ง</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-[10px] text-slate-400 block font-semibold uppercase">มูลค่ารวมสะสม</span>
+                                    <span class="font-extrabold text-blue-600 text-sm">฿${card.totalVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                </div>
+                                <button class="text-slate-400 hover:text-slate-600 transition">
+                                    <i id="${arrowId}" class="fa-solid fa-chevron-down transform transition-transform duration-200"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Card Expandable Detail Section -->
+                        <div id="${detailId}" class="hidden border-t border-slate-150 bg-slate-50/40 transition-all duration-300">
+                            <div class="p-4 overflow-x-auto w-full table-scroll">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr class="border-b border-slate-200 text-slate-500 font-bold bg-slate-100/50">
+                                            <th class="p-3">วันที่สั่ง</th>
+                                            <th class="p-3">PO Number</th>
+                                            <th class="p-3">PR Number</th>
+                                            <th class="p-3">Supplier</th>
+                                            <th class="p-3 text-center">จำนวน</th>
+                                            <th class="p-3 text-right">ราคา/หน่วย</th>
+                                            <th class="p-3 text-right">ราคารวม</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 bg-white">
+                                        ${ordersHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        }
+
+        window.toggleHistoryCardDetail = function(detailId, arrowId) {
+            const detailEl = document.getElementById(detailId);
+            const arrowEl = document.getElementById(arrowId);
+            if (!detailEl || !arrowEl) return;
+
+            if (detailEl.classList.contains('hidden')) {
+                detailEl.classList.remove('hidden');
+                arrowEl.classList.add('rotate-180');
+            } else {
+                detailEl.classList.add('hidden');
+                arrowEl.classList.remove('rotate-180');
+            }
+        };

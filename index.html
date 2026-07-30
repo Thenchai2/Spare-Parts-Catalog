@@ -518,6 +518,7 @@
                     <li class="protected-nav-item hidden" data-view="view-transactions"><a href="#" onclick="switchView('view-transactions', this); loadTransactions();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-receipt mr-3 w-5 text-center flex-shrink-0"></i><span>ประวัติการเบิกจ่าย</span></a></li>
                     <li class="protected-nav-item hidden" data-view="view-restock"><a href="#" onclick="switchView('view-restock', this);" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-boxes-stacked mr-3 w-5 text-center flex-shrink-0 text-sky-400"></i><span class="font-bold text-sky-300">เติมสต็อกอะไหล่</span></a></li>
                     <li class="protected-nav-item hidden border-t border-slate-700/30 my-1 pt-1" data-view="divider-admin"></li>
+                    <li class="protected-nav-item hidden" data-view="view-purchase"><a href="#" onclick="switchView('view-purchase', this);" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-cart-shopping mr-3 w-5 text-center flex-shrink-0 text-indigo-400"></i><span>งานจัดซื้อ</span></a></li>
                     <li class="protected-nav-item hidden" data-view="view-report"><a href="#" onclick="switchView('view-report', this); initReportView();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-chart-pie mr-3 w-5 text-center flex-shrink-0 text-emerald-400"></i><span>Report</span></a></li>
                     <li class="protected-nav-item hidden" data-view="view-settings"><a href="#" onclick="switchView('view-settings', this); initSettingsView();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-cog mr-3 w-5 text-center flex-shrink-0 text-slate-400"></i><span>ตั้งค่าระบบ</span></a></li>
                     <li id="nav-item-manual" data-view="view-manual"><a href="#" onclick="switchView('view-manual', this); initManualView();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-book mr-3 w-5 text-center flex-shrink-0 text-purple-400"></i><span>คู่มือ</span></a></li>
@@ -1385,6 +1386,145 @@
                                     <!-- ประวัติจะถูกเรนเดอร์โดย JS -->
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================== หน้า งานจัดซื้อ ================== -->
+                <section id="view-purchase" class="view-section hidden w-full relative z-10 p-6 overflow-y-auto">
+                    <!-- Main Grid View -->
+                    <div id="purchase-menu-grid">
+                        <!-- Header -->
+                        <div class="mb-8">
+                            <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-800 flex items-center gap-3">
+                                <i class="fa-solid fa-cart-flatbed-suitcase text-indigo-500 animate-pulse"></i>
+                                งานจัดซื้อ (Purchasing)
+                            </h2>
+                            <p class="text-slate-500 text-sm mt-1.5">จัดการการจัดซื้อ รับสินค้า และตรวจสอบภาพรวมการสั่งซื้ออะไหล่</p>
+                        </div>
+
+                        <!-- Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <!-- Card 1: รับสินค้า -->
+                            <div onclick="openPurchaseSubSection('receive', 'รับสินค้า', 'fa-dolly', 'from-emerald-500 to-teal-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                        <i class="fa-solid fa-dolly text-2xl"></i>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">รับสินค้า</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">บันทึกรับรายการอะไหล่เข้าคลังและอัปเดตสต็อกสินค้า</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 2: เพิ่มคำสั่งซื้อ -->
+                            <div onclick="openPurchaseSubSection('add-order', 'เพิ่มคำสั่งซื้อ', 'fa-cart-plus', 'from-blue-500 to-indigo-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                        <i class="fa-solid fa-cart-plus text-2xl"></i>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors">เพิ่มคำสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">สร้างเอกสารสั่งซื้ออะไหล่ใหม่ส่งซัพพลายเออร์</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 3: จัดการคำสั่งซื้อ -->
+                            <div id="card-manage-orders" onclick="openPurchaseSubSection('manage-orders', 'จัดการคำสั่งซื้อ', 'fa-tasks', 'from-amber-500 to-orange-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-amber-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
+                                        <i class="fa-solid fa-tasks text-2xl"></i>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-amber-600 transition-colors">จัดการคำสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">ตรวจสอบความคืบหน้า อนุมัติ หรือยกเลิกใบสั่งซื้อ</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 4: ประวัติการสั่งซื้อ -->
+                            <div id="card-purchase-history" onclick="openPurchaseSubSection('history', 'ประวัติการสั่งซื้อ', 'fa-clock-rotate-left', 'from-purple-500 to-pink-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-purple-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+                                        <i class="fa-solid fa-clock-rotate-left text-2xl"></i>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-colors">ประวัติการสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">เรียกดูบันทึกและประวัติใบสั่งซื้อย้อนหลังทั้งหมดในระบบ</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 5: ภาพรวมการสั่งซื้อ -->
+                            <div onclick="openPurchaseSubSection('overview', 'ภาพรวมการสั่งซื้อ', 'fa-chart-line', 'from-cyan-500 to-blue-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-cyan-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                                        <i class="fa-solid fa-chart-line text-2xl"></i>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-cyan-600 bg-cyan-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-cyan-600 transition-colors">ภาพรวมการสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">รายงานสถิติ แดชบอร์ดข้อมูลและวิเคราะห์แนวโน้มจัดซื้อ</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 6: แดชบอร์ดการสั่งซื้อ -->
+                            <div onclick="openPurchaseSubSection('dashboard-orders', 'แดชบอร์ดการสั่งซื้อ', 'fa-table-list', 'from-indigo-500 to-purple-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-indigo-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                                        <i class="fa-solid fa-table-list text-2xl"></i>
+                                    </div>
+                                    <span class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">แดชบอร์ดการสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">ค้นหาและวิเคราะห์รายการสั่งซื้อพร้อมระดับสถานะอย่างละเอียด</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub Sections Container (Initially Hidden) -->
+                    <div id="purchase-sub-content" class="hidden">
+                        <!-- Navigation / Back Button -->
+                        <button onclick="closePurchaseSubSection()" class="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-xl text-xs font-semibold shadow-sm transition mb-6">
+                            <i class="fa-solid fa-arrow-left"></i> กลับไปหน้าจัดซื้อ
+                        </button>
+
+                        <!-- Dynamically filled wrapper -->
+                        <div class="bg-white rounded-3xl border border-slate-150 p-8 shadow-sm">
+                            <div class="flex items-center gap-4 mb-6">
+                                <div id="sub-sec-icon-bg" class="w-12 h-12 rounded-xl text-white flex items-center justify-center">
+                                    <i id="sub-sec-icon" class="fa-solid text-xl"></i>
+                                </div>
+                                <div>
+                                    <h3 id="sub-sec-title" class="text-xl font-bold text-slate-800"></h3>
+                                    <p id="sub-sec-subtitle" class="text-xs text-slate-500 mt-0.5"></p>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-100 pt-6">
+                                <!-- Content Body -->
+                                <div id="sub-sec-body" class="flex flex-col items-center justify-center py-12 text-center text-slate-400">
+                                    <div class="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 text-3xl mb-4 border border-dashed border-slate-200">
+                                        <i class="fa-solid fa-helmet-safety"></i>
+                                    </div>
+                                    <h4 class="text-slate-700 font-bold text-sm">ระบบส่วนงานนี้อยู่ระหว่างการเตรียมความพร้อม</h4>
+                                    <p class="text-slate-400 text-xs mt-1 max-w-sm leading-relaxed">โมดูลนี้ได้รับการเชื่อมโยงแล้ว ทีมพัฒนากำลังดำเนินการติดตั้งฐานข้อมูลและหน้าอินเตอร์เฟสสำหรับการใช้งานจริง</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
