@@ -4838,6 +4838,13 @@ function renderRestockHistoryTable() {
     if (!tbody) return;
     tbody.innerHTML = '';
     
+    const isAdmin = isLoggedIn && currentUser && currentUser.role === 'ADMIN';
+    const btnDeleteAll = document.getElementById('btnDeleteAllRestockHistory');
+    const thAction = document.getElementById('thRestockHistoryAction');
+    
+    if (btnDeleteAll) btnDeleteAll.classList.toggle('hidden', !isAdmin);
+    if (thAction) thAction.classList.toggle('hidden', !isAdmin);
+    
     const searchKeyword = document.getElementById('restock_history_search').value.toLowerCase();
     const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
     
@@ -4852,6 +4859,7 @@ function renderRestockHistoryTable() {
             const unit = prod ? prod.unit : 'ชิ้น';
             
             historyList.push({
+                txId: t.id,
                 productId: item.product_id,
                 productName: prodName,
                 qty: item.qty,
@@ -4865,13 +4873,14 @@ function renderRestockHistoryTable() {
     
     if (keywords.length > 0) {
         historyList = historyList.filter(h => {
-            const txt = `${h.productId} ${h.productName}`.toLowerCase();
+            const txt = `${h.txId} ${h.productId} ${h.productName} ${h.operator} ${h.note}`.toLowerCase();
             return keywords.every(kw => txt.includes(kw));
         });
     }
     
+    const colCount = isAdmin ? 9 : 8;
     if (historyList.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="p-10 text-center text-gray-400">ไม่พบประวัติการปรับปรุงสต็อก</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="p-10 text-center text-gray-400">ไม่พบประวัติการปรับปรุงสต็อก</td></tr>`;
         return;
     }
     
@@ -4886,6 +4895,16 @@ function renderRestockHistoryTable() {
         }
         
         const absQty = Math.abs(h.qty);
+        let actionTd = '';
+        if (isAdmin) {
+            actionTd = `
+                <td class="p-4 text-center">
+                    <button onclick="requestDeleteRestockHistoryItem('${escapeForJS(h.txId)}')" class="text-red-600 hover:text-white bg-red-50 hover:bg-red-600 px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1 shadow-sm" title="ลบรายการนี้">
+                        <i class="fa-solid fa-trash"></i> ลบ
+                    </button>
+                </td>
+            `;
+        }
         
         let tr = `
             <tr class="hover:bg-slate-50 transition border-b border-gray-100 last:border-0">
@@ -4901,10 +4920,109 @@ function renderRestockHistoryTable() {
                 <td class="p-4 text-center text-gray-500">${escapeHTML(h.unit)}</td>
                 <td class="p-4 text-gray-700 font-semibold">${escapeHTML(h.operator)}</td>
                 <td class="p-4 text-gray-500 text-xs">${escapeHTML(h.note)}</td>
+                ${actionTd}
             </tr>
         `;
         tbody.insertAdjacentHTML('beforeend', tr);
     });
+}
+
+async function requestDeleteRestockHistoryItem(txId) {
+    if (!isLoggedIn || !currentUser || currentUser.role !== 'ADMIN') {
+        showToast('คุณไม่มีสิทธิ์ดำเนินการนี้', 'error');
+        return;
+    }
+    
+    const confirmResult = await Swal.fire({
+        title: 'ยืนยันการลบประวัติการปรับปรุงสต็อก',
+        html: `คุณต้องการลบประวัติการปรับปรุงสต็อกรายการนี้ (<b class="font-mono text-blue-600">${escapeHTML(txId)}</b>) ใช่หรือไม่?<br><span class="text-xs text-amber-600 font-bold">* หมายเหตุ: เป็นการลบบันทึกประวัติเท่านั้น ไม่กระทบกับจำนวนสต็อกคงเหลือปัจจุบัน</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: '<i class="fa-solid fa-trash-can mr-1"></i> ลบรายการนี้',
+        cancelButtonText: 'ยกเลิก',
+        reverseButtons: true,
+        customClass: {
+            popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
+            confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-red-500/30',
+            cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
+        }
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    showLoading('กำลังลบรายการประวัติ...');
+    try {
+        let res = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'deleteTransaction',
+                payload: { transaction_id: txId }
+            })
+        });
+        let result = await res.json();
+        if (result.status === 'success') {
+            showToast('ลบรายการประวัติเรียบร้อยแล้ว', 'success');
+            await initRestockHistoryView();
+        } else {
+            showToast('เกิดข้อผิดพลาด: ' + (result.message || 'ไม่สามารถลบรายการได้'), 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function requestClearAllRestockHistory() {
+    if (!isLoggedIn || !currentUser || currentUser.role !== 'ADMIN') {
+        showToast('คุณไม่มีสิทธิ์ดำเนินการนี้', 'error');
+        return;
+    }
+    
+    const confirmResult = await Swal.fire({
+        title: '⚠️ ยืนยันล้างประวัติการปรับปรุงสต็อกทั้งหมด',
+        html: `คุณต้องการ<b class="text-red-600">ลบประวัติการปรับปรุงสต็อกสินค้าทั้งหมด</b>ในระบบ ใช่หรือไม่?<br><span class="text-xs text-red-500 font-bold">* การดำเนินการนี้ไม่สามารถย้อนกลับได้ (จำนวนสต็อกคงเหลือปัจจุบันจะไม่เปลี่ยนแปลง)</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: '<i class="fa-solid fa-trash-can mr-1"></i> ยืนยันล้างทั้งหมด',
+        cancelButtonText: 'ยกเลิก',
+        reverseButtons: true,
+        customClass: {
+            popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
+            confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-red-500/30',
+            cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
+        }
+    });
+
+    if (!confirmResult.isConfirmed) return;
+
+    showLoading('กำลังล้างประวัติการปรับปรุงสต็อกทั้งหมด...');
+    try {
+        let res = await fetch(API_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'deleteAllRestockHistory',
+                payload: {}
+            })
+        });
+        let result = await res.json();
+        if (result.status === 'success') {
+            showToast('ล้างประวัติการปรับปรุงสต็อกทั้งหมดเรียบร้อยแล้ว', 'success');
+            await initRestockHistoryView();
+        } else {
+            showToast('เกิดข้อผิดพลาด: ' + (result.message || 'ไม่สามารถล้างประวัติได้'), 'error');
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
+    } finally {
+        hideLoading();
+    }
 }
 
 function exportRestockHistoryToExcel() {
@@ -8833,6 +8951,7 @@ const BYPASS_ACTIONS = [
     'bulkRestockProducts',
     'cancelTransaction',
     'deleteTransaction',
+    'deleteAllRestockHistory',
     'addMapping',
     'deleteMapping',
     'saveSettings',
@@ -8904,6 +9023,9 @@ async function handleActionDirectlyOnFirebase(action, payload) {
             case 'deleteTransaction':
                 await executeDirectDeleteTransaction(payload);
                 return { status: 'success', message: 'ลบประวัติใบเบิกสำเร็จเรียบร้อยแล้ว' };
+            case 'deleteAllRestockHistory':
+                await executeDirectDeleteAllRestockHistory();
+                return { status: 'success', message: 'ล้างประวัติการปรับปรุงสต็อกทั้งหมดสำเร็จเรียบร้อยแล้ว' };
             case 'addMapping':
                 await executeDirectAddMapping(payload);
                 return { status: 'success', message: 'บันทึกการจับคู่สำเร็จ' };
@@ -9509,6 +9631,18 @@ async function executeDirectDeleteTransaction(payload) {
     
     const txId = String(payload.transaction_id).trim();
     transactions = transactions.filter(t => t.id !== txId);
+    
+    await firebase.database().ref('transactions').set(transactions);
+    transactionsCache = null; // Invalidate cache
+    db.transactions = transactions;
+    invalidateLocalCache();
+}
+
+async function executeDirectDeleteAllRestockHistory() {
+    const snapshot = await firebase.database().ref('transactions').get();
+    let transactions = ensureArray(snapshot.val());
+    
+    transactions = transactions.filter(t => t.status !== 'Restock');
     
     await firebase.database().ref('transactions').set(transactions);
     transactionsCache = null; // Invalidate cache

@@ -152,6 +152,10 @@ function doPost(e) {
       deleteManual(payload.id);
       response.message = 'ลบคู่มือสำเร็จ';
     }
+    else if (action === 'deleteAllRestockHistory') {
+      deleteAllRestockHistory();
+      response.message = 'ล้างประวัติการปรับปรุงสต็อกทั้งหมดสำเร็จ';
+    }
     else if (action === 'backupFirebaseToDrive') {
       backupFirebaseToDrive();
       response.message = 'สำรองไฟล์ JSON ลง Google Drive สำเร็จ';
@@ -1550,6 +1554,24 @@ function bulkRestockProducts(payload) {
     patchFirebaseData("", updates);
     
     return { count: updatedCount };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteAllRestockHistory() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const db = getFirebaseData("") || {};
+    let transactions = db.transactions || [];
+    transactions = transactions.filter(t => t.status !== 'Restock');
+    updateFirebaseData("transactions", transactions);
   } finally {
     lock.releaseLock();
   }
