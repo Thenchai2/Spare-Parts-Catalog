@@ -8764,3 +8764,811 @@ function exportReportToExcel() {
 
             timelineContainer.innerHTML = timelineHtml;
         };
+
+// ==========================================
+// Firebase Direct Backend Bypass Interceptor
+// ==========================================
+
+const BYPASS_ACTIONS = [
+    'getTransactions',
+    'checkoutOrder',
+    'restockProduct',
+    'cancelTransaction',
+    'deleteTransaction',
+    'addMapping',
+    'deleteMapping',
+    'saveSettings',
+    'getUsersList',
+    'loginUser',
+    'registerUser',
+    'updateUserByAdmin',
+    'deleteUserByAdmin',
+    'updateSelfProfile',
+    'addPurchaseOrderDraft',
+    'editPurchaseOrderDraft',
+    'deletePurchaseOrderDraft',
+    'deletePurchaseOrderActive',
+    'updatePurchaseOrderDraft',
+    'receivePurchaseGoods'
+];
+
+async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getFormattedDateTimeString() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
+async function handleActionDirectlyOnFirebase(action, payload) {
+    try {
+        switch (action) {
+            case 'getTransactions':
+                return { status: 'success', data: await executeDirectGetTransactions() };
+            case 'loginUser':
+                return { status: 'success', data: await executeDirectLogin(payload) };
+            case 'registerUser':
+                await executeDirectRegister(payload);
+                return { status: 'success', message: 'สมัครสมาชิกสำเร็จ รอการอนุมัติสิทธิ์' };
+            case 'getUsersList':
+                return { status: 'success', data: await executeDirectGetUsersList(payload) };
+            case 'updateUserByAdmin':
+                await executeDirectUpdateUserByAdmin(payload);
+                return { status: 'success', message: 'อัปเดตข้อมูลผู้ใช้สำเร็จ' };
+            case 'deleteUserByAdmin':
+                await executeDirectDeleteUserByAdmin(payload);
+                return { status: 'success', message: 'ลบผู้ใช้สำเร็จ' };
+            case 'updateSelfProfile':
+                return { status: 'success', data: await executeDirectUpdateSelfProfile(payload), message: 'อัปเดตโปรไฟล์สำเร็จ' };
+            case 'checkoutOrder':
+                return { status: 'success', data: await executeDirectCheckout(payload) };
+            case 'restockProduct':
+                return { status: 'success', data: await executeDirectRestock(payload) };
+            case 'cancelTransaction':
+                await executeDirectCancelTransaction(payload);
+                return { status: 'success', message: 'ยกเลิกใบเบิกสำเร็จ คืนสต็อกอะไหล่เข้าคลังเรียบร้อยแล้ว' };
+            case 'deleteTransaction':
+                await executeDirectDeleteTransaction(payload);
+                return { status: 'success', message: 'ลบประวัติใบเบิกสำเร็จเรียบร้อยแล้ว' };
+            case 'addMapping':
+                await executeDirectAddMapping(payload);
+                return { status: 'success', message: 'บันทึกการจับคู่สำเร็จ' };
+            case 'deleteMapping':
+                await executeDirectDeleteMapping(payload);
+                return { status: 'success', message: 'ยกเลิกการจับคู่สำเร็จ' };
+            case 'saveSettings':
+                await executeDirectSaveSettings(payload);
+                return { status: 'success', message: 'บันทึกตั้งค่าสำเร็จ' };
+            case 'addPurchaseOrderDraft':
+                return { status: 'success', data: await executeDirectAddPurchaseOrderDraft(payload) };
+            case 'editPurchaseOrderDraft':
+                await executeDirectEditPurchaseOrderDraft(payload);
+                return { status: 'success', message: 'แก้ไขจำนวนสั่งซื้อสำเร็จ' };
+            case 'deletePurchaseOrderDraft':
+                await executeDirectDeletePurchaseOrderDraft(payload);
+                return { status: 'success', message: 'ลบรายการสั่งซื้อสำเร็จ' };
+            case 'deletePurchaseOrderActive':
+                await executeDirectDeletePurchaseOrderActive(payload);
+                return { status: 'success', message: 'ลบรายการจัดซื้อสำเร็จ' };
+            case 'updatePurchaseOrderDraft':
+                await executeDirectUpdatePurchaseOrderDraft(payload);
+                return { status: 'success', message: 'บันทึกการแก้ไขใบจัดซื้อสำเร็จ' };
+            case 'receivePurchaseGoods':
+                return { status: 'success', data: await executeDirectReceivePurchaseGoods(payload) };
+            default:
+                throw new Error("Action not supported directly on Firebase");
+        }
+    } catch (e) {
+        return { status: 'error', message: e.message };
+    }
+}
+
+let transactionsCache = null;
+
+async function executeDirectGetTransactions() {
+    if (transactionsCache) {
+        console.log("[Firebase Bypass] Returning transactions from memory cache");
+        return transactionsCache;
+    }
+    const snapshot = await firebase.database().ref('transactions').get();
+    transactionsCache = ensureArray(snapshot.val()).reverse();
+    return transactionsCache;
+}
+
+async function executeDirectLogin(payload) {
+    const username = String(payload.username).trim().toLowerCase();
+    const password = String(payload.password);
+    if (!username || !password) throw new Error("กรุณากรอกข้อมูลการเข้าสู่ระบบ");
+    
+    const snapshot = await firebase.database().ref('users').get();
+    const users = ensureArray(snapshot.val());
+    const hash = await sha256(password);
+    
+    const user = users.find(u => (String(u.email).toLowerCase() === username || String(u.phone).trim() === username));
+    if (!user) throw new Error("ไม่พบชื่อผู้ใช้ (อีเมลหรือเบอร์โทรศัพท์) ในระบบ");
+    if (user.passwordHash !== hash) throw new Error("รหัสผ่านไม่ถูกต้อง");
+    
+    return {
+        fullName: user.fullName,
+        department: user.department,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        priceLevel: user.priceLevel || "A",
+        userType: user.userType || "insource"
+    };
+}
+
+async function executeDirectRegister(payload) {
+    const fullName = String(payload.fullName || "").trim();
+    const department = String(payload.department || "").trim();
+    const phone = String(payload.phone || "").trim();
+    const email = String(payload.email || "").trim().toLowerCase();
+    const password = String(payload.password || "");
+    const userType = payload.userType ? String(payload.userType).trim() : "";
+    if (!fullName || !department || !phone || !email || !password || !userType) {
+        throw new Error("กรุณากรอกข้อมูลและเลือกประเภทบุคคลให้ครบถ้วน");
+    }
+    
+    const snapshot = await firebase.database().ref('users').get();
+    const users = ensureArray(snapshot.val());
+    
+    if (users.some(u => String(u.email || "").toLowerCase() === email)) throw new Error("อีเมลนี้ถูกใช้สมัครสมาชิกแล้ว");
+    if (users.some(u => String(u.phone || "").trim() === phone)) throw new Error("เบอร์โทรศัพท์นี้ถูกใช้สมัครสมาชิกแล้ว");
+    
+    const newUser = {
+        fullName: fullName,
+        department: department,
+        phone: phone,
+        email: email,
+        passwordHash: await sha256(password),
+        role: "user",
+        priceLevel: "A",
+        userType: userType
+    };
+    users.push(newUser);
+    await firebase.database().ref('users').set(users);
+}
+
+async function executeDirectGetUsersList(payload) {
+    const snapshot = await firebase.database().ref('users').get();
+    return ensureArray(snapshot.val());
+}
+
+async function executeDirectUpdateUserByAdmin(payload) {
+    const email = String(payload.email || "").trim().toLowerCase();
+    const snapshot = await firebase.database().ref('users').get();
+    const users = ensureArray(snapshot.val());
+    
+    const index = users.findIndex(u => String(u.email || "").toLowerCase() === email);
+    if (index === -1) throw new Error("ไม่พบอีเมลผู้ใช้ที่ต้องการแก้ไข");
+    
+    users[index].fullName = String(payload.fullName || users[index].fullName).trim();
+    users[index].department = String(payload.department || users[index].department).trim();
+    users[index].phone = String(payload.phone || users[index].phone).trim();
+    users[index].role = String(payload.role || users[index].role).trim();
+    users[index].priceLevel = String(payload.priceLevel || users[index].priceLevel || "A").trim();
+    users[index].userType = String(payload.userType || users[index].userType || "insource").trim();
+    
+    if (payload.password) {
+        users[index].passwordHash = await sha256(payload.password);
+    }
+    await firebase.database().ref('users').set(users);
+}
+
+async function executeDirectDeleteUserByAdmin(payload) {
+    const email = String(payload.email || "").trim().toLowerCase();
+    const snapshot = await firebase.database().ref('users').get();
+    let users = ensureArray(snapshot.val());
+    
+    users = users.filter(u => String(u.email || "").toLowerCase() !== email);
+    await firebase.database().ref('users').set(users);
+}
+
+async function executeDirectUpdateSelfProfile(payload) {
+    const currentEmail = String(payload.currentEmail || "").trim().toLowerCase();
+    const snapshot = await firebase.database().ref('users').get();
+    const users = ensureArray(snapshot.val());
+    
+    const index = users.findIndex(u => String(u.email || "").toLowerCase() === currentEmail);
+    if (index === -1) throw new Error("ไม่พบข้อมูลบัญชีผู้ใช้ในระบบ");
+    
+    const newEmail = String(payload.email || "").trim().toLowerCase();
+    if (newEmail !== currentEmail && users.some(u => String(u.email || "").toLowerCase() === newEmail)) {
+        throw new Error("อีเมลใหม่นี้ถูกใช้งานแล้ว");
+    }
+    
+    users[index].fullName = String(payload.fullName || users[index].fullName).trim();
+    users[index].department = String(payload.department || users[index].department).trim();
+    users[index].phone = String(payload.phone || users[index].phone).trim();
+    users[index].email = newEmail;
+    
+    if (payload.password) {
+        users[index].passwordHash = await sha256(payload.password);
+    }
+    
+    await firebase.database().ref('users').set(users);
+    
+    return {
+        fullName: users[index].fullName,
+        department: users[index].department,
+        phone: users[index].phone,
+        email: users[index].email,
+        role: users[index].role,
+        priceLevel: users[index].priceLevel || "A",
+        userType: users[index].userType || "insource"
+    };
+}
+
+async function executeDirectCheckout(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let products = ensureArray(fbData.appData?.products);
+    let lots = ensureArray(fbData.lots);
+    let transactions = ensureArray(fbData.transactions);
+    
+    const cart = payload.cart;
+    const prodMap = {};
+    products.forEach(p => {
+        prodMap[p.id] = p;
+    });
+    
+    // ตรวจสอบสต็อก
+    cart.forEach(item => {
+        const product = prodMap[item.id];
+        if (!product) throw new Error("ไม่พบอะไหล่รหัส " + item.id + " ในระบบ");
+        
+        const stockQty = parseFloat(product.stock_qty) || 0;
+        if (stockQty < item.qty) {
+            throw new Error("สต็อกไม่เพียงพอ: อะไหล่ " + product.name + " (" + item.id + ") มีคงเหลือ " + stockQty + " ชิ้น แต่พยายามเบิก " + item.qty + " ชิ้น");
+        }
+        
+        const prodLots = lots.filter(l => String(l.product_id).trim() === String(item.id).trim() && (parseFloat(l.remaining_qty) || 0) > 0);
+        const totalLotQty = prodLots.reduce((sum, l) => sum + (parseFloat(l.remaining_qty) || 0), 0);
+        if (totalLotQty < stockQty) {
+            const diff = stockQty - totalLotQty;
+            lots.push({
+                lot_id: "LOT-SUPP-" + item.id + "-" + Date.now(),
+                product_id: item.id,
+                cost: parseFloat(product.cost) || 0,
+                price_a: parseFloat(product.price_a) || 0,
+                price_b: parseFloat(product.price_b) || 0,
+                price_c: parseFloat(product.price_c) || 0,
+                initial_qty: diff,
+                remaining_qty: diff,
+                created_at: getFormattedDateTimeString(),
+                note: "Lot สำรองคงเหลือ"
+            });
+        }
+    });
+    
+    // ตัดสต็อก FIFO
+    const checkoutItems = [];
+    cart.forEach(item => {
+        const product = prodMap[item.id];
+        let neededQty = item.qty;
+        
+        const availableLots = lots.filter(l => String(l.product_id).trim() === String(item.id).trim() && (parseFloat(l.remaining_qty) || 0) > 0)
+                                  .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        
+        availableLots.forEach(lot => {
+            if (neededQty <= 0) return;
+            const remaining = parseFloat(lot.remaining_qty) || 0;
+            const takeQty = Math.min(remaining, neededQty);
+            
+            lot.remaining_qty = remaining - takeQty;
+            neededQty -= takeQty;
+            
+            let lotPrice = item.price;
+            if (item.priceLevel === 'A' && lot.price_a) lotPrice = parseFloat(lot.price_a) || 0;
+            else if (item.priceLevel === 'B' && lot.price_b) lotPrice = parseFloat(lot.price_b) || 0;
+            else if (item.priceLevel === 'C' && lot.price_c) lotPrice = parseFloat(lot.price_c) || 0;
+            
+            checkoutItems.push({
+                detail_id: "",
+                product_id: item.id,
+                lot_id: lot.lot_id,
+                qty: takeQty,
+                unit_cost: parseFloat(lot.cost) || 0,
+                price: lotPrice,
+                subtotal: takeQty * lotPrice
+            });
+        });
+        
+        product.stock_qty = (parseFloat(product.stock_qty) || 0) - item.qty;
+    });
+    
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const datePrefix = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    const dateStr = getFormattedDateTimeString();
+    
+    let counter = 1;
+    if (transactions.length > 0) {
+        const lastTx = transactions[transactions.length - 1];
+        if (lastTx && lastTx.id && String(lastTx.id).indexOf("LDT-" + datePrefix) === 0) {
+            const parts = String(lastTx.id).split("-");
+            const lastNum = parseInt(parts[2], 10);
+            if (!isNaN(lastNum)) counter = lastNum + 1;
+        }
+    }
+    const txId = "LDT-" + datePrefix + "-" + String(counter).padStart(4, '0');
+    
+    let calcTotalPrice = 0;
+    checkoutItems.forEach((it, idx) => {
+        it.detail_id = txId + "-" + (idx + 1);
+        calcTotalPrice += it.subtotal;
+    });
+    
+    const newTransaction = {
+        id: txId,
+        date: dateStr,
+        requester: payload.requester,
+        department: payload.department,
+        machine_id: payload.machine_id,
+        serial_number: payload.serial_number || "",
+        total_price: payload.total_price || calcTotalPrice,
+        note: payload.note || "",
+        status: "Success",
+        items: checkoutItems
+    };
+    transactions.push(newTransaction);
+    
+    const updates = {};
+    updates["appData/products"] = products;
+    updates["lots"] = lots;
+    updates["transactions"] = transactions;
+    await firebase.database().ref().update(updates);
+    transactionsCache = null; // Invalidate cache
+    
+    db.products = products;
+    db.lots = lots;
+    db.transactions = transactions;
+    
+    return { transaction_id: txId, items: checkoutItems };
+}
+
+async function executeDirectRestock(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let products = ensureArray(fbData.appData?.products);
+    let lots = ensureArray(fbData.lots);
+    let transactions = ensureArray(fbData.transactions);
+    
+    const product = products.find(p => String(p.id).trim() === String(payload.id).trim());
+    if (!product) throw new Error("ไม่พบของต้องการปรับปรุงสต็อก");
+    
+    const qty = parseFloat(payload.qty) || 0;
+    const cost = (payload.cost !== undefined && payload.cost !== "") ? parseFloat(payload.cost) : (parseFloat(product.cost) || 0);
+    const pA = (payload.price_a !== undefined && payload.price_a !== "") ? parseFloat(payload.price_a) : (parseFloat(product.price_a) || 0);
+    const pB = (payload.price_b !== undefined && payload.price_b !== "") ? parseFloat(payload.price_b) : (parseFloat(product.price_b) || 0);
+    const pC = (payload.price_c !== undefined && payload.price_c !== "") ? parseFloat(payload.price_c) : (parseFloat(product.price_c) || 0);
+    
+    const lotId = "LOT-" + payload.id + "-" + Date.now();
+    lots.push({
+        lot_id: lotId,
+        product_id: payload.id,
+        cost: cost,
+        price_a: pA,
+        price_b: pB,
+        price_c: pC,
+        initial_qty: qty,
+        remaining_qty: qty,
+        created_at: getFormattedDateTimeString(),
+        note: payload.note || "เติมสต็อกสินค้า"
+    });
+    
+    product.stock_qty = (parseFloat(product.stock_qty) || 0) + qty;
+    product.cost = cost;
+    product.price_a = pA;
+    product.price_b = pB;
+    product.price_c = pC;
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+        const lastTx = transactions[transactions.length - 1];
+        lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+    
+    const newRestockTransaction = {
+        id: nextTxId,
+        requester: payload.requester,
+        department: payload.department || "สโตร์ (Restock)",
+        machine_id: "RESTOCK",
+        serial_number: "",
+        total_price: 0,
+        note: payload.note || "เติมสต็อกสินค้า",
+        created_at: getFormattedDateTimeString(),
+        status: "Restock",
+        items: [{
+            lot_id: lotId,
+            product_id: payload.id,
+            qty: qty,
+            cost: cost,
+            price: 0
+        }]
+    };
+    transactions.push(newRestockTransaction);
+    
+    const updates = {};
+    updates["appData/products"] = products;
+    updates["lots"] = lots;
+    updates["transactions"] = transactions;
+    await firebase.database().ref().update(updates);
+    transactionsCache = null; // Invalidate cache
+    
+    db.products = products;
+    db.lots = lots;
+    db.transactions = transactions;
+    
+    return { new_stock: product.stock_qty, transaction_id: nextTxId, lot_id: lotId };
+}
+
+async function executeDirectCancelTransaction(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let products = ensureArray(fbData.appData?.products);
+    let lots = ensureArray(fbData.lots);
+    let transactions = ensureArray(fbData.transactions);
+    
+    const txId = String(payload.transaction_id).trim();
+    const txIndex = transactions.findIndex(t => t.id === txId);
+    if (txIndex === -1) throw new Error("ไม่พบรหัสใบเบิก " + txId);
+    
+    const targetTx = transactions[txIndex];
+    if (targetTx.status === "Cancelled") throw new Error("ใบเบิกนี้ถูกยกเลิกไปแล้ว");
+    
+    targetTx.items.forEach(item => {
+        const prod = products.find(p => String(p.id).trim() === String(item.product_id).trim());
+        if (prod) {
+            prod.stock_qty = (parseFloat(prod.stock_qty) || 0) + item.qty;
+        }
+        if (item.lot_id) {
+            const lot = lots.find(l => l.lot_id === item.lot_id);
+            if (lot) {
+                lot.remaining_qty = (parseFloat(lot.remaining_qty) || 0) + item.qty;
+            }
+        }
+    });
+    
+    transactions[txIndex].status = "Cancelled";
+    
+    const updates = {};
+    updates["appData/products"] = products;
+    updates["lots"] = lots;
+    updates["transactions"] = transactions;
+    await firebase.database().ref().update(updates);
+    transactionsCache = null; // Invalidate cache
+    
+    db.products = products;
+    db.lots = lots;
+    db.transactions = transactions;
+}
+
+async function executeDirectDeleteTransaction(payload) {
+    const snapshot = await firebase.database().ref('transactions').get();
+    let transactions = ensureArray(snapshot.val());
+    
+    const txId = String(payload.transaction_id).trim();
+    transactions = transactions.filter(t => t.id !== txId);
+    
+    await firebase.database().ref('transactions').set(transactions);
+    transactionsCache = null; // Invalidate cache
+    db.transactions = transactions;
+}
+
+async function executeDirectAddMapping(payload) {
+    const snapshot = await firebase.database().ref('mappings').get();
+    let mappings = ensureArray(snapshot.val());
+    
+    let productIds = Array.isArray(payload.product_ids) ? payload.product_ids : [payload.product_id];
+    let machineId = String(payload.machine_id);
+    
+    let isModified = false;
+    productIds.forEach(pid => {
+        let cleanPid = String(pid);
+        if (!cleanPid) return;
+        let isDuplicate = mappings.some(m => String(m.product_id) === cleanPid && String(m.machine_id) === machineId);
+        if (!isDuplicate) {
+            mappings.push({ product_id: cleanPid, machine_id: machineId });
+            isModified = true;
+        }
+    });
+    
+    if (isModified) {
+        await firebase.database().ref('mappings').set(mappings);
+        db.mappings = mappings;
+    } else {
+        throw new Error("รายการอะไหล่ที่เลือก ถูกจับคู่กับเครื่องจักรนี้อยู่แล้วทั้งหมด");
+    }
+}
+
+async function executeDirectDeleteMapping(payload) {
+    const snapshot = await firebase.database().ref('mappings').get();
+    let mappings = ensureArray(snapshot.val());
+    
+    let pid = String(payload.product_id);
+    let mid = String(payload.machine_id);
+    mappings = mappings.filter(m => !(String(m.product_id) === pid && String(m.machine_id) === mid));
+    
+    await firebase.database().ref('mappings').set(mappings);
+    db.mappings = mappings;
+}
+
+async function executeDirectSaveSettings(payload) {
+    await firebase.database().ref('appData/settings').set(payload);
+    db.settings = payload;
+}
+
+async function executeDirectAddPurchaseOrderDraft(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let products = ensureArray(fbData.appData?.products);
+    let purchaseOrders = ensureArray(fbData.appData?.purchaseOrders);
+    
+    const productId = String(payload.productId).trim();
+    const productName = String(payload.productName).trim();
+    const orderedQty = parseFloat(payload.orderedQty) || 0;
+    if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    let currentCost = 0;
+    let currentSupplier = "";
+    
+    const product = products.find(p => String(p.id).trim() === productId);
+    if (product) {
+        currentCost = parseFloat(product.cost) || 0;
+        currentSupplier = String(product.supplier || "").trim();
+    }
+    
+    const newPoNumber = "PO-DRF-" + Date.now();
+    const newPo = {
+        poNumber: newPoNumber,
+        prNumber: "",
+        productId: productId,
+        productName: productName,
+        orderDate: todayStr,
+        orderedQty: orderedQty,
+        receivedQty: 0,
+        lastReceivedDate: "",
+        status: "ร่าง",
+        unitCost: currentCost,
+        totalCost: orderedQty * currentCost,
+        supplier: currentSupplier
+    };
+    
+    purchaseOrders.push(newPo);
+    await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+    db.purchaseOrders = purchaseOrders;
+    
+    return newPo;
+}
+
+async function executeDirectEditPurchaseOrderDraft(payload) {
+    const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
+    const purchaseOrders = ensureArray(snapshot.val());
+    
+    const poNumber = String(payload.poNumber).trim();
+    const productId = String(payload.productId).trim();
+    const index = purchaseOrders.findIndex(o => String(o.poNumber).trim() === poNumber && String(o.productId).trim() === productId);
+    if (index === -1) throw new Error("ไม่พบรายการใบสั่งซื้อที่ต้องการแก้ไข");
+    
+    const orderedQty = parseFloat(payload.orderedQty) || 0;
+    if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    
+    purchaseOrders[index].orderedQty = orderedQty;
+    purchaseOrders[index].totalCost = orderedQty * (parseFloat(purchaseOrders[index].unitCost) || 0);
+    
+    await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+    db.purchaseOrders = purchaseOrders;
+}
+
+async function executeDirectDeletePurchaseOrderDraft(payload) {
+    const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
+    let purchaseOrders = ensureArray(snapshot.val());
+    
+    const poNumber = String(payload.poNumber).trim();
+    const productId = String(payload.productId).trim();
+    purchaseOrders = purchaseOrders.filter(o => !(String(o.poNumber).trim() === poNumber && String(o.productId).trim() === productId));
+    
+    await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+    db.purchaseOrders = purchaseOrders;
+}
+
+async function executeDirectDeletePurchaseOrderActive(payload) {
+    const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
+    let purchaseOrders = ensureArray(snapshot.val());
+    
+    const poNumber = String(payload.poNumber).trim();
+    purchaseOrders = purchaseOrders.filter(o => String(o.poNumber).trim() !== poNumber);
+    
+    await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+    db.purchaseOrders = purchaseOrders;
+}
+
+async function executeDirectUpdatePurchaseOrderDraft(payload) {
+    const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
+    const purchaseOrders = ensureArray(snapshot.val());
+    
+    const draftPoList = payload.draftPoList;
+    const finalPoNumber = String(payload.finalPoNumber).trim();
+    const prNumber = String(payload.prNumber || "").trim();
+    const supplier = String(payload.supplier || "").trim();
+    const orderDate = String(payload.orderDate || "").trim();
+    
+    draftPoList.forEach(draftItem => {
+        const itemPoNum = String(draftItem.poNumber).trim();
+        const itemProdId = String(draftItem.productId).trim();
+        const index = purchaseOrders.findIndex(o => String(o.poNumber).trim() === itemPoNum && String(o.productId).trim() === itemProdId);
+        
+        if (index !== -1) {
+            purchaseOrders[index].poNumber = finalPoNumber;
+            purchaseOrders[index].prNumber = prNumber;
+            purchaseOrders[index].supplier = supplier;
+            purchaseOrders[index].orderDate = orderDate;
+            purchaseOrders[index].status = "ค้างส่ง";
+            purchaseOrders[index].unitCost = parseFloat(draftItem.unitCost) || 0;
+            purchaseOrders[index].totalCost = (parseFloat(draftItem.unitCost) || 0) * (parseFloat(purchaseOrders[index].orderedQty) || 0);
+        }
+    });
+    
+    await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+    db.purchaseOrders = purchaseOrders;
+}
+
+async function executeDirectReceivePurchaseGoods(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let purchaseOrders = ensureArray(fbData.appData?.purchaseOrders);
+    let products = ensureArray(fbData.appData?.products);
+    let lots = ensureArray(fbData.lots);
+    let transactions = ensureArray(fbData.transactions);
+    
+    const poNum = String(payload.poNumber).trim();
+    const poIndex = purchaseOrders.findIndex(o => String(o.poNumber).trim() === poNum);
+    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum);
+    
+    const po = purchaseOrders[poIndex];
+    const recAmt = parseFloat(payload.receivedAmount) || 0;
+    const currentReceived = parseFloat(po.receivedQty) || 0;
+    const ordered = parseFloat(po.orderedQty) || 0;
+    
+    const newReceived = currentReceived + recAmt;
+    if (newReceived > ordered) {
+        throw new Error("จำนวนรับเข้าสะสม (" + newReceived + ") เกินจำนวนที่สั่งซื้อไว้ (" + ordered + ")");
+    }
+    
+    const nowStr = new Date().toISOString().split('T')[0];
+    po.receivedQty = newReceived;
+    po.lastReceivedDate = nowStr;
+    po.status = (newReceived === ordered) ? "ได้รับครบ" : "ค้างส่ง";
+    
+    const lotId = "LOT-PO-" + poNum + "-" + Date.now();
+    const lotPrices = {
+        price_a: 0,
+        price_b: 0,
+        price_c: 0
+    };
+    
+    const product = products.find(p => String(p.id).trim() === String(po.productId).trim());
+    if (product) {
+        product.stock_qty = (parseFloat(product.stock_qty) || 0) + recAmt;
+        product.cost = parseFloat(po.unitCost) || 0;
+        
+        // Auto prices
+        const cost = parseFloat(po.unitCost) || 0;
+        let factorA = 1.05;
+        let factorB = 1.10;
+        let factorC = 1.20;
+        if (cost >= 10000) { factorA = 1.02; factorB = 1.05; factorC = 1.10; }
+        else if (cost >= 5000) { factorA = 1.03; factorB = 1.07; factorC = 1.15; }
+        
+        product.price_a = Math.ceil(cost * factorA);
+        product.price_b = Math.ceil(cost * factorB);
+        product.price_c = Math.ceil(cost * factorC);
+        
+        lotPrices.price_a = product.price_a;
+        lotPrices.price_b = product.price_b;
+        lotPrices.price_c = product.price_c;
+    }
+    
+    lots.push({
+        lot_id: lotId,
+        product_id: po.productId,
+        cost: parseFloat(po.unitCost) || 0,
+        price_a: lotPrices.price_a,
+        price_b: lotPrices.price_b,
+        price_c: lotPrices.price_c,
+        initial_qty: recAmt,
+        remaining_qty: recAmt,
+        created_at: getFormattedDateTimeString(),
+        note: "รับสินค้าจาก PO " + poNum
+    });
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+        const lastTx = transactions[transactions.length - 1];
+        lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+    
+    transactions.push({
+        id: nextTxId,
+        requester: payload.requester || "สโตร์ (รับเข้า)",
+        department: payload.department || "สโตร์ (รับเข้า)",
+        machine_id: "PO_RECEIVE",
+        serial_number: "",
+        total_price: 0,
+        note: "รับสินค้าจาก PO " + poNum,
+        created_at: getFormattedDateTimeString(),
+        status: "Restock",
+        items: [{
+            lot_id: lotId,
+            product_id: po.productId,
+            qty: recAmt,
+            cost: parseFloat(po.unitCost) || 0,
+            price: 0
+        }]
+    });
+    
+    const updates = {};
+    updates["appData/purchaseOrders"] = purchaseOrders;
+    updates["appData/products"] = products;
+    updates["lots"] = lots;
+    updates["transactions"] = transactions;
+    await firebase.database().ref().update(updates);
+    transactionsCache = null; // Invalidate cache
+    
+    db.purchaseOrders = purchaseOrders;
+    db.products = products;
+    db.lots = lots;
+    db.transactions = transactions;
+    
+    return { status: "success", poNumber: poNum };
+}
+
+const ensureArray = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'object') {
+        return Object.keys(val).sort((a, b) => Number(a) - Number(b)).map(key => val[key]);
+    }
+    return [];
+};
+
+// Global Fetch Interceptor to bypass Apps Script
+const originalFetch = window.fetch;
+window.fetch = async function (url, options) {
+    if (typeof url === 'string' && url.includes(API_URL) && options && options.method === 'POST') {
+        try {
+            const body = JSON.parse(options.body);
+            const action = body.action;
+            const payload = body.payload;
+            
+            if (BYPASS_ACTIONS.includes(action)) {
+                console.log(`[Firebase Bypass] Intercepting action: ${action}`);
+                const result = await handleActionDirectlyOnFirebase(action, payload);
+                return new Response(JSON.stringify(result), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+        } catch (e) {
+            console.error("Fetch interceptor parse error: ", e);
+        }
+    }
+    return originalFetch.apply(this, arguments);
+};
+
+console.log("[Firebase Bypass] Interceptor activated successfully.");
