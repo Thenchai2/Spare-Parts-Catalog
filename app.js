@@ -1,4 +1,5 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1OqQEixgT5b2srLf8qiqsyjuhncKSGm0vbqE8uoJ2RluO/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbx2Y9ySye3CfrwPjr3WiVrYLAKwTj0YlSqiObr94h_L0SagMvxZ7sYTHVVk-jYUDyiLig/exec';
+const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app/appData.json';
         
         let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
         let isShowCostInCatalog = false;
@@ -28,7 +29,7 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             'Technician': ['view-catalog', 'view-pos', 'view-transactions', 'view-settings', 'view-manual'],
             'Manager': ['view-catalog', 'view-pos', 'view-transactions', 'view-add-product', 'view-edit-products', 'view-restock', 'view-report', 'view-restock-history', 'view-settings', 'view-manage-manuals', 'view-manual', 'view-user-management'],
             'ADMIN': ['view-catalog', 'view-pos', 'view-transactions', 'view-add-product', 'view-machines', 'view-mapping', 'view-edit-products', 'view-edit-mapping', 'view-restock', 'view-report', 'view-restock-history', 'view-settings', 'view-manage-manuals', 'view-manual', 'view-user-management', 'view-purchase'],
-            'StoreOfficer': ['view-catalog', 'view-purchase']
+            'StoreOfficer': ['view-catalog', 'view-purchase', 'view-settings']
         };
 
         function hasAccess(viewId) {
@@ -243,6 +244,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
                 const cardHistory = document.getElementById('card-purchase-history');
                 if (cardHistory) {
                     cardHistory.classList.toggle('hidden', !isAdmin);
+                }
+                const cardOverview = document.getElementById('card-purchase-overview');
+                if (cardOverview) {
+                    cardOverview.classList.toggle('hidden', !isAdmin);
                 }
             }
 
@@ -647,6 +652,61 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
 
             const cardMachines = document.getElementById('card-settings-machines');
             if (cardMachines) cardMachines.classList.toggle('hidden', !hasAccess('view-machines'));
+
+            const cardBackup = document.getElementById('card-settings-backup');
+            if (cardBackup) {
+                const isAdmin = isLoggedIn && currentUser && currentUser.role === 'ADMIN';
+                cardBackup.classList.toggle('hidden', !isAdmin);
+            }
+        }
+
+        async function runManualBackup(type) {
+            if (!isLoggedIn || !currentUser || currentUser.role !== 'ADMIN') {
+                showToast('คุณไม่มีสิทธิ์เข้าถึงส่วนนี้', 'error');
+                return;
+            }
+            
+            const action = type === 'json' ? 'backupFirebaseToDrive' : 'backupFirebaseToSheets';
+            const confirmMsg = type === 'json' 
+                ? 'คุณต้องการสำรองข้อมูลจาก Firebase บันทึกเป็นไฟล์ JSON ใน Google Drive ใช่หรือไม่?'
+                : 'คุณต้องการสำรองข้อมูลจาก Firebase ไปบันทึกทับลงใน Google Sheet ทั้งหมดใช่หรือไม่? (การกระทำนี้จะใช้เวลาสักครู่)';
+                
+            const result = await Swal.fire({
+                title: 'ยืนยันการสำรองข้อมูล',
+                text: confirmMsg,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'ยืนยัน',
+                cancelButtonText: 'ยกเลิก'
+            });
+            
+            if (result.isConfirmed) {
+                showLoading('กำลังสำรองข้อมูล กรุณารอสักครู่...');
+                try {
+                    const res = await fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: action,
+                            payload: { requesterEmail: currentUser.email }
+                        })
+                    });
+                    
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const resData = await res.json();
+                    
+                    if (resData.status === 'success') {
+                        showToast(resData.message || 'สำรองข้อมูลสำเร็จ', 'success');
+                    } else {
+                        throw new Error(resData.message || 'เกิดข้อผิดพลาดในการสำรองข้อมูล');
+                    }
+                } catch (error) {
+                    showToast('เกิดข้อผิดพลาด: ' + error.message, 'error');
+                } finally {
+                    hideLoading();
+                }
+            }
         }
 
         function openSelfSettingsModal() {
@@ -1074,9 +1134,50 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
 
         async function _fetchFromServer(background = false) {
             try {
-                const res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const data = await res.json();
+                let data = null;
+                
+                // ลองดึงจาก Firebase ก่อนเพื่อความเร็วสูงสุด
+                if (FIREBASE_DB_URL) {
+                    try {
+                        const res = await fetch(FIREBASE_DB_URL);
+                        if (res.ok) {
+                            let fbData = await res.json();
+                            if (fbData) {
+                                // ป้องกันปัญหา Firebase แปลง Array ที่ดัชนีไม่เรียงกัน (Sparse Array) ให้กลายเป็น Object
+                                const ensureArray = (val) => {
+                                    if (!val) return [];
+                                    if (Array.isArray(val)) return val;
+                                    if (typeof val === 'object') {
+                                        return Object.keys(val)
+                                            .sort((a, b) => Number(a) - Number(b))
+                                            .map(key => val[key]);
+                                    }
+                                    return [];
+                                };
+                                
+                                fbData.products = ensureArray(fbData.products);
+                                fbData.machines = ensureArray(fbData.machines);
+                                fbData.mappings = ensureArray(fbData.mappings);
+                                fbData.purchaseOrders = ensureArray(fbData.purchaseOrders);
+                                if (fbData.manuals) fbData.manuals = ensureArray(fbData.manuals);
+                                if (fbData.lots) fbData.lots = ensureArray(fbData.lots);
+                                
+                                if (fbData.products && fbData.products.length > 0) {
+                                    data = fbData;
+                                }
+                            }
+                        }
+                    } catch (fbErr) {
+                        console.warn("ดึงข้อมูลจาก Firebase ล้มเหลว กำลังใช้การดึงข้อมูลสำรองจาก Google Apps Script: ", fbErr);
+                    }
+                }
+                
+                // หากดึงจาก Firebase ไม่สำเร็จ, ข้อมูลว่างเปล่า, หรือรูปแบบไม่ถูกต้อง -> ดึงจาก Google Apps Script สำรอง (Google Drive)
+                if (!data || !data.products || !Array.isArray(data.products)) {
+                    const res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    data = await res.json();
+                }
 
                 // ตรวจสอบว่าข้อมูลที่ได้กลับมา valid ก่อน cache
                 if (data && Array.isArray(data.products)) {
@@ -1147,6 +1248,35 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxcLDYeck1O7LrOoA5i7OA1
             renderPublicManualsTable();
             renderManageManualsTable();
             populateDatalists();
+            updatePurchaseBadgeCounts();
+        }
+
+        function updatePurchaseBadgeCounts() {
+            if (!db || !Array.isArray(db.purchaseOrders)) return;
+
+            // Count for รับสินค้า (Receive Goods) -> status is "สั่งแล้ว" or "ค้างส่ง"
+            const receivePendingCount = db.purchaseOrders.filter(o => o.status === "สั่งแล้ว" || o.status === "ค้างส่ง").length;
+            const receiveBadge = document.getElementById('count-purchase-receive');
+            if (receiveBadge) {
+                if (receivePendingCount > 0) {
+                    receiveBadge.innerText = receivePendingCount;
+                    receiveBadge.classList.remove('hidden');
+                } else {
+                    receiveBadge.classList.add('hidden');
+                }
+            }
+
+            // Count for จัดการคำสั่งซื้อ (Manage Purchase Orders) -> status is "เตรียมสั่ง" or "รออนุมัติ"
+            const managePendingCount = db.purchaseOrders.filter(o => o.status === "เตรียมสั่ง" || o.status === "รออนุมัติ").length;
+            const manageBadge = document.getElementById('count-manage-orders');
+            if (manageBadge) {
+                if (managePendingCount > 0) {
+                    manageBadge.innerText = managePendingCount;
+                    manageBadge.classList.remove('hidden');
+                } else {
+                    manageBadge.classList.add('hidden');
+                }
+            }
         }
 
         function populateDatalists() {
@@ -6138,6 +6268,13 @@ function exportReportToExcel() {
         let purchaseHistorySearchQuery = '';
         let purchaseHistoryCategoryFilter = '';
         let purchaseHistoryGroupFilter = '';
+        let purchaseOverviewSearchQuery = '';
+        let purchaseOverviewCategoryFilter = '';
+        let purchaseOverviewGroupFilter = '';
+        let purchaseOverviewSelectedMonths = [];
+        let purchaseOverviewSelectedYears = [];
+        let selectedVolatileProduct = '';
+        let selectedVolatileSupplier = '';
 
         function openPurchaseSubSection(key, title, iconClass, gradientClass) {
             const gridEl = document.getElementById('purchase-menu-grid');
@@ -6423,35 +6560,266 @@ function exportReportToExcel() {
                 }, 50);
             } else if (key === 'overview') {
                 desc = "ภาพรวมงบประมาณจัดซื้อและสถิติยอดซื้อ";
+                
+                const products = db.products || [];
+                const categories = [...new Set(products.map(p => p.category || 'ไม่ระบุ').filter(Boolean))].sort();
+                const categoryOptions = categories.map(c => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
+
+                const groups = [...new Set(products.map(p => p.group || 'ไม่ระบุ').filter(Boolean))].sort();
+                const groupOptions = groups.map(g => `<option value="${escapeHTML(g)}">${escapeHTML(g)}</option>`).join('');
+
+                const monthNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                const monthButtons = monthNames.map((name, index) => {
+                    const monthVal = String(index + 1).padStart(2, '0');
+                    return `
+                        <button onclick="toggleOverviewMonth('${monthVal}', this)" id="btn-overview-month-${monthVal}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition active:scale-95 shadow-sm">
+                            ${name}
+                        </button>
+                    `;
+                }).join('');
+
+                // Get dynamic years from purchaseOrders
+                const orders = db.purchaseOrders || [];
+                const yearsList = [...new Set(orders.map(o => o.orderDate ? o.orderDate.split('-')[0] : '').filter(Boolean))].sort();
+                if (yearsList.length === 0) {
+                    yearsList.push(new Date().getFullYear().toString());
+                }
+                const yearButtons = yearsList.map(y => `
+                    <button onclick="toggleOverviewYear('${y}', this)" id="btn-overview-year-${y}" class="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition active:scale-95 shadow-sm">
+                        ${y}
+                    </button>
+                `).join('');
+
                 htmlContent = `
-                    <div class="space-y-4">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                            <div class="bg-white rounded-2xl border border-slate-150 p-4 shadow-sm flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
-                                    <i class="fa-solid fa-sack-dollar text-lg"></i>
+                    <div class="space-y-6">
+                        <!-- Filters Header Card -->
+                        <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                            <!-- Search, Category, Group -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1.5">ค้นหาอะไหล่:</label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                            <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                        </span>
+                                        <input type="text" id="overview-search-input" onkeyup="handleOverviewSearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-slate-50/50 placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหาด้วยรหัส หรือชื่อสินค้า...">
+                                    </div>
                                 </div>
                                 <div>
-                                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">ยอดสั่งซื้อเดือนนี้</p>
-                                    <h4 class="text-lg font-bold text-gray-800">฿0.00</h4>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1.5">ประเภทอะไหล่:</label>
+                                    <select onchange="handleOverviewCategory(this.value)" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm">
+                                        <option value="">ทั้งหมด</option>
+                                        ${categoryOptions}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-[11px] font-semibold text-slate-500 mb-1.5">กลุ่มสินค้า:</label>
+                                    <select onchange="handleOverviewGroup(this.value)" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm">
+                                        <option value="">ทั้งหมด</option>
+                                        ${groupOptions}
+                                    </select>
                                 </div>
                             </div>
-                            <div class="bg-white rounded-2xl border border-slate-150 p-4 shadow-sm flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
-                                    <i class="fa-solid fa-file-contract text-lg"></i>
+
+                            <!-- Months Selection -->
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-[11px] font-semibold text-slate-500">เลือกเดือน (เลือกได้หลายเดือน):</span>
+                                    <div class="space-x-2">
+                                        <button onclick="selectOverviewAllMonths(true)" class="text-[10px] text-blue-600 hover:underline font-bold">เลือกทั้งหมด</button>
+                                        <span class="text-slate-300">|</span>
+                                        <button onclick="selectOverviewAllMonths(false)" class="text-[10px] text-slate-500 hover:underline font-bold">ล้างทั้งหมด</button>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">จำนวนใบสั่งซื้อทั้งหมด</p>
-                                    <h4 class="text-lg font-bold text-gray-800">0 รายการ</h4>
+                                <div class="flex flex-wrap gap-2">
+                                    ${monthButtons}
+                                </div>
+                            </div>
+
+                            <!-- Years Selection -->
+                            <div>
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-[11px] font-semibold text-slate-500">เลือกปี (เลือกได้หลายปี):</span>
+                                    <div class="space-x-2">
+                                        <button onclick="selectOverviewAllYears(true)" class="text-[10px] text-blue-600 hover:underline font-bold">เลือกทั้งหมด</button>
+                                        <span class="text-slate-300">|</span>
+                                        <button onclick="selectOverviewAllYears(false)" class="text-[10px] text-slate-500 hover:underline font-bold">ล้างทั้งหมด</button>
+                                    </div>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    ${yearButtons}
                                 </div>
                             </div>
                         </div>
-                        <div class="border border-slate-100 rounded-2xl p-6 bg-slate-50/50 flex flex-col items-center justify-center text-center py-10">
-                            <i class="fa-solid fa-chart-bar text-slate-300 text-4xl mb-3"></i>
-                            <p class="text-sm font-bold text-slate-600">ไม่มีข้อมูลแสดงในกราฟ</p>
-                            <p class="text-xs text-slate-400 mt-1">จะวิเคราะห์และแสดงกราฟเมื่อมีการบันทึกจัดซื้อจริงในฐานข้อมูล</p>
+
+                        <!-- CORE STAT CARDS -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="overview-stat-cards">
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <!-- LINE CHART & MONTHLY COMPARISON CARD -->
+                        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                            <!-- SVG Line Chart (Left 2 cols) -->
+                            <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm xl:col-span-2 space-y-4">
+                                <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-chart-line text-blue-500"></i> กราฟเส้นเปรียบเทียบมูลค่าการสั่งซื้อรายเดือน
+                                </h3>
+                                <div id="overview-chart-container" class="relative w-full h-80 flex items-center justify-center bg-slate-50 rounded-xl overflow-hidden">
+                                    <!-- Rendered dynamically as SVG -->
+                                </div>
+                            </div>
+
+                            <!-- Monthly Comparisons Table (Right 1 col) -->
+                            <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                                <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-calendar-days text-purple-500"></i> แนวโน้มเปรียบเทียบรายเดือน
+                                </h3>
+                                <div class="overflow-y-auto max-h-[320px] pr-1 scrollbar-thin space-y-3" id="overview-monthly-comparison-list">
+                                    <!-- Rendered dynamically as cards -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PRODUCT & SUPPLIER PRICE ANALYTICS SECTION -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- Product Price Analysis -->
+                            <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                                <div class="flex items-center justify-between gap-2">
+                                    <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-tags text-amber-500"></i> วิเคราะห์ความเคลื่อนไหวราคาอะไหล่
+                                    </h3>
+                                    <!-- Selector to drill down -->
+                                    <select id="overview-drill-product-select" onchange="drillProductPriceTrend(this.value)" class="px-2 py-1 text-[10px] border border-slate-200 rounded-lg max-w-[180px] bg-white focus:outline-none shadow-sm">
+                                        <option value="">เลือกสินค้าเพื่อวิเคราะห์...</option>
+                                    </select>
+                                </div>
+
+                                <!-- Drill Down Timeline container -->
+                                <div id="product-drilldown-timeline" class="hidden bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-2 max-h-48 overflow-y-auto">
+                                    <!-- Timeline rows rendered dynamically -->
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                    <!-- Top 10 Price Down -->
+                                    <div class="space-y-2">
+                                        <h4 class="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                                            <i class="fa-solid fa-arrow-down-long"></i> 10 อันดับ ราคาลงมากสุด
+                                        </h4>
+                                        <div class="overflow-x-auto border border-slate-100 rounded-xl bg-white max-h-60 overflow-y-auto table-scroll">
+                                            <table class="w-full text-left text-[10px] border-collapse">
+                                                <thead>
+                                                    <tr class="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
+                                                        <th class="p-2">สินค้า</th>
+                                                        <th class="p-2 text-right">ลดลง</th>
+                                                        <th class="p-2 text-right">%</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="top-product-downs">
+                                                    <!-- Dynamic rows -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <!-- Top 10 Price Up -->
+                                    <div class="space-y-2">
+                                        <h4 class="text-xs font-bold text-rose-600 flex items-center gap-1">
+                                            <i class="fa-solid fa-arrow-up-long"></i> 10 อันดับ ราคาขึ้นมากสุด
+                                        </h4>
+                                        <div class="overflow-x-auto border border-slate-100 rounded-xl bg-white max-h-60 overflow-y-auto table-scroll">
+                                            <table class="w-full text-left text-[10px] border-collapse">
+                                                <thead>
+                                                    <tr class="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
+                                                        <th class="p-2">สินค้า</th>
+                                                        <th class="p-2 text-right">เพิ่มขึ้น</th>
+                                                        <th class="p-2 text-right">%</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="top-product-ups">
+                                                    <!-- Dynamic rows -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Supplier Price Analysis -->
+                            <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                                <div class="flex items-center justify-between gap-2">
+                                    <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-handshake text-indigo-500"></i> วิเคราะห์ความผันผวนราคาคู่ค้า (Supplier)
+                                    </h3>
+                                    <!-- Selector to drill down -->
+                                    <select id="overview-drill-supplier-select" onchange="drillSupplierPriceTrend(this.value)" class="px-2 py-1 text-[10px] border border-slate-200 rounded-lg max-w-[180px] bg-white focus:outline-none shadow-sm">
+                                        <option value="">เลือก Supplier...</option>
+                                    </select>
+                                </div>
+
+                                <!-- Drill Down Timeline container -->
+                                <div id="supplier-drilldown-timeline" class="hidden bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-2 max-h-48 overflow-y-auto">
+                                    <!-- Timeline rows rendered dynamically -->
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                    <!-- Top 10 Supplier Price Down -->
+                                    <div class="space-y-2">
+                                        <h4 class="text-xs font-bold text-emerald-600 flex items-center gap-1">
+                                            <i class="fa-solid fa-arrow-down-long"></i> 10 อันดับ Supplier ราคาลดลง
+                                        </h4>
+                                        <div class="overflow-x-auto border border-slate-100 rounded-xl bg-white max-h-60 overflow-y-auto table-scroll">
+                                            <table class="w-full text-left text-[10px] border-collapse">
+                                                <thead>
+                                                    <tr class="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
+                                                        <th class="p-2">Supplier</th>
+                                                        <th class="p-2 text-right">ลดลงเฉลี่ย</th>
+                                                        <th class="p-2 text-right">%</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="top-supplier-downs">
+                                                    <!-- Dynamic rows -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <!-- Top 10 Supplier Price Up -->
+                                    <div class="space-y-2">
+                                        <h4 class="text-xs font-bold text-rose-600 flex items-center gap-1">
+                                            <i class="fa-solid fa-arrow-up-long"></i> 10 อันดับ Supplier ราคาเพิ่มขึ้น
+                                        </h4>
+                                        <div class="overflow-x-auto border border-slate-100 rounded-xl bg-white max-h-60 overflow-y-auto table-scroll">
+                                            <table class="w-full text-left text-[10px] border-collapse">
+                                                <thead>
+                                                    <tr class="bg-slate-50 border-b border-slate-100 font-bold text-slate-500">
+                                                        <th class="p-2">Supplier</th>
+                                                        <th class="p-2 text-right">เพิ่มเฉลี่ย</th>
+                                                        <th class="p-2 text-right">%</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="top-supplier-ups">
+                                                    <!-- Dynamic rows -->
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `;
+
+                setTimeout(() => {
+                    purchaseOverviewSearchQuery = '';
+                    purchaseOverviewCategoryFilter = '';
+                    purchaseOverviewGroupFilter = '';
+                    purchaseOverviewSelectedMonths = []; // empty = all
+                    purchaseOverviewSelectedYears = []; // empty = all
+                    
+                    // Highlight initially all months/years buttons
+                    selectOverviewAllMonths(true);
+                    selectOverviewAllYears(true);
+                    
+                    renderPurchaseOverviewDashboard();
+                }, 50);
             }
 
             const subtitleEl = document.getElementById('sub-sec-subtitle');
@@ -6516,6 +6884,7 @@ function exportReportToExcel() {
             const tableBody = document.getElementById('receiveTableBody');
             if (!tableBody) return;
 
+            const isAdmin = currentUser && currentUser.role === 'ADMIN';
             const orders = db.purchaseOrders || [];
             
             // Filter: show only items with status "สั่งแล้ว" or "ค้างส่ง"
@@ -6566,9 +6935,16 @@ function exportReportToExcel() {
                         <td class="p-4 text-center font-bold text-emerald-600">${o.receivedQty}</td>
                         <td class="p-4 text-center font-extrabold text-rose-600 bg-rose-50/30">${pendingQty}</td>
                         <td class="p-4 text-center">
-                            <button onclick="handleReceiveGoods('${escapeForJS(o.poNumber)}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] transition shadow-sm hover:shadow-md active:scale-95">
-                                <i class="fa-solid fa-square-check"></i> รับสินค้า
-                            </button>
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="handleReceiveGoods('${escapeForJS(o.poNumber)}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] transition shadow-sm hover:shadow-md active:scale-95">
+                                    <i class="fa-solid fa-square-check"></i> รับสินค้า
+                                </button>
+                                ${isAdmin ? `
+                                <button onclick="deleteActivePurchaseOrder('${escapeForJS(o.poNumber)}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white font-bold rounded-xl text-[11px] transition border border-rose-100 hover:border-rose-600 shadow-sm active:scale-95">
+                                    <i class="fa-solid fa-trash-can"></i> ลบ
+                                </button>
+                                ` : ''}
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -6745,6 +7121,52 @@ function exportReportToExcel() {
                         showToast("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้: " + error.message, "error");
                     }
                     hideLoading();
+                }
+            });
+        }
+
+        function deleteActivePurchaseOrder(poNumber) {
+            if (!currentUser || currentUser.role !== 'ADMIN') {
+                showToast("คุณไม่มีสิทธิ์ทำรายการนี้", "error");
+                return;
+            }
+
+            confirmAction(`คุณต้องการลบรายการสั่งซื้อเลขที่ "${poNumber}" ใช่หรือไม่?\nการดำเนินการนี้จะลบรายการสั่งซื้อออกจากระบบอย่างถาวรและไม่สามารถย้อนกลับได้`, async () => {
+                showLoading("กำลังลบรายการสั่งซื้อ...");
+                try {
+                    const res = await fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: 'deletePurchaseOrderActive',
+                            payload: {
+                                requesterEmail: currentUser.email,
+                                poNumber: poNumber
+                            }
+                        })
+                    });
+                    const resData = await res.json();
+                    hideLoading();
+                    
+                    if (resData.status === 'success') {
+                        showToast("ลบรายการสั่งซื้อสำเร็จ", "success");
+                        await fetchData(true); // force refresh database
+                        
+                        // Re-render views
+                        const receiveTableBody = document.getElementById('receiveTableBody');
+                        if (receiveTableBody) {
+                            renderReceiveTable();
+                        }
+                        const dashboardOrdersTableBody = document.getElementById('dashboardOrdersTableBody');
+                        if (dashboardOrdersTableBody) {
+                            renderDashboardOrdersTable();
+                        }
+                    } else {
+                        showToast(resData.message || "เกิดข้อผิดพลาดในการลบรายการสั่งซื้อ", "error");
+                    }
+                } catch (err) {
+                    hideLoading();
+                    console.error(err);
+                    showToast("เชื่อมต่อเซิร์ฟเวอร์ล้มเหลว", "error");
                 }
             });
         }
@@ -7377,6 +7799,10 @@ function exportReportToExcel() {
 
                     const qtyVal = parseFloat(qtyInput.value);
                     const costVal = parseFloat(costInput.value) || 0;
+                    const statusVal = statusSelect.value;
+                    const poVal = poInput.value.trim();
+                    const prVal = prInput.value.trim();
+
                     if (isNaN(qtyVal) || qtyVal <= 0) {
                         Swal.showValidationMessage('กรุณากรอกจำนวนที่สั่งซื้อให้ถูกต้อง');
                         return false;
@@ -7385,14 +7811,20 @@ function exportReportToExcel() {
                         Swal.showValidationMessage('กรุณากรอกราคาต่อหน่วยให้ถูกต้อง');
                         return false;
                     }
+                    if (statusVal === 'สั่งแล้ว') {
+                        if (!poVal || !prVal) {
+                            Swal.showValidationMessage('กรุณากรอกเลขที่ PO Number และ PR Number ให้ครบทั้งสองช่องเพื่อเปลี่ยนสถานะเป็น "สั่งแล้ว"');
+                            return false;
+                        }
+                    }
 
                     return {
                         originalPoNumber: order.poNumber,
-                        newPoNumber: poInput.value.trim(),
-                        newPrNumber: prInput.value.trim(),
+                        newPoNumber: poVal,
+                        newPrNumber: prVal,
                         orderedQty: qtyVal,
                         unitCost: costVal,
-                        status: statusSelect.value,
+                        status: statusVal,
                         productId: order.productId,
                         newSupplier: supplierInput.value.trim()
                     };
@@ -7609,4 +8041,726 @@ function exportReportToExcel() {
                 detailEl.classList.add('hidden');
                 arrowEl.classList.remove('rotate-180');
             }
+        };
+
+        let purchaseOverviewProducts = [];
+        let purchaseOverviewSuppliers = [];
+
+        window.toggleOverviewMonth = function(monthVal, btn) {
+            const idx = purchaseOverviewSelectedMonths.indexOf(monthVal);
+            if (idx === -1) {
+                purchaseOverviewSelectedMonths.push(monthVal);
+                btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-blue-500 bg-blue-600 text-white transition active:scale-95 shadow-sm";
+            } else {
+                purchaseOverviewSelectedMonths.splice(idx, 1);
+                btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition active:scale-95 shadow-sm";
+            }
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.toggleOverviewYear = function(yearVal, btn) {
+            const idx = purchaseOverviewSelectedYears.indexOf(yearVal);
+            if (idx === -1) {
+                purchaseOverviewSelectedYears.push(yearVal);
+                btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-500 bg-blue-600 text-white transition active:scale-95 shadow-sm";
+            } else {
+                purchaseOverviewSelectedYears.splice(idx, 1);
+                btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition active:scale-95 shadow-sm";
+            }
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.selectOverviewAllMonths = function(selectBool) {
+            const monthNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+            purchaseOverviewSelectedMonths = [];
+            monthNames.forEach((name, index) => {
+                const monthVal = String(index + 1).padStart(2, '0');
+                const btn = document.getElementById(`btn-overview-month-${monthVal}`);
+                if (!btn) return;
+                if (selectBool) {
+                    purchaseOverviewSelectedMonths.push(monthVal);
+                    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-blue-500 bg-blue-600 text-white transition active:scale-95 shadow-sm";
+                } else {
+                    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition active:scale-95 shadow-sm";
+                }
+            });
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.selectOverviewAllYears = function(selectBool) {
+            const orders = db.purchaseOrders || [];
+            const yearsList = [...new Set(orders.map(o => o.orderDate ? o.orderDate.split('-')[0] : '').filter(Boolean))].sort();
+            if (yearsList.length === 0) {
+                yearsList.push(new Date().getFullYear().toString());
+            }
+            purchaseOverviewSelectedYears = [];
+            yearsList.forEach(y => {
+                const btn = document.getElementById(`btn-overview-year-${y}`);
+                if (!btn) return;
+                if (selectBool) {
+                    purchaseOverviewSelectedYears.push(y);
+                    btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-500 bg-blue-600 text-white transition active:scale-95 shadow-sm";
+                } else {
+                    btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition active:scale-95 shadow-sm";
+                }
+            });
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.handleOverviewSearch = function(val) {
+            purchaseOverviewSearchQuery = val.trim().toLowerCase();
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.handleOverviewCategory = function(val) {
+            purchaseOverviewCategoryFilter = val.trim();
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.handleOverviewGroup = function(val) {
+            purchaseOverviewGroupFilter = val.trim();
+            renderPurchaseOverviewDashboard();
+        };
+
+        window.renderPurchaseOverviewDashboard = function() {
+            const statCardsContainer = document.getElementById('overview-stat-cards');
+            const chartContainer = document.getElementById('overview-chart-container');
+            const monthlyComparisonList = document.getElementById('overview-monthly-comparison-list');
+            const topProductDowns = document.getElementById('top-product-downs');
+            const topProductUps = document.getElementById('top-product-ups');
+            const topSupplierDowns = document.getElementById('top-supplier-downs');
+            const topSupplierUps = document.getElementById('top-supplier-ups');
+            const drillProductSelect = document.getElementById('overview-drill-product-select');
+            const drillSupplierSelect = document.getElementById('overview-drill-supplier-select');
+
+            if (!statCardsContainer) return;
+
+            const orders = db.purchaseOrders || [];
+            const products = db.products || [];
+
+            // Filter orders: only ordered items (exclude drafts, wait-for-approvals)
+            let activeOrders = orders.filter(o => o.status === "สั่งแล้ว" || o.status === "ได้รับครบ" || o.status === "ค้างส่ง");
+
+            // Filter by search query (match Product ID or Product Name)
+            if (purchaseOverviewSearchQuery) {
+                activeOrders = activeOrders.filter(o => 
+                    (o.productId || '').toLowerCase().includes(purchaseOverviewSearchQuery) ||
+                    (o.productName || '').toLowerCase().includes(purchaseOverviewSearchQuery)
+                );
+            }
+
+            // Filter by Category and Group
+            if (purchaseOverviewCategoryFilter || purchaseOverviewGroupFilter) {
+                activeOrders = activeOrders.filter(o => {
+                    const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    if (!prod) return false;
+                    if (purchaseOverviewCategoryFilter && prod.category !== purchaseOverviewCategoryFilter) return false;
+                    if (purchaseOverviewGroupFilter && prod.group !== purchaseOverviewGroupFilter) return false;
+                    return true;
+                });
+            }
+
+            // Filter by selected Years and Months
+            activeOrders = activeOrders.filter(o => {
+                if (!o.orderDate || o.orderDate.length < 7) return false;
+                const year = o.orderDate.split('-')[0];
+                const month = o.orderDate.split('-')[1];
+                
+                if (purchaseOverviewSelectedYears.length > 0 && !purchaseOverviewSelectedYears.includes(year)) return false;
+                if (purchaseOverviewSelectedMonths.length > 0 && !purchaseOverviewSelectedMonths.includes(month)) return false;
+                return true;
+            });
+
+            // Calculate core stats
+            const orderCount = activeOrders.length;
+            let totalOrderedValue = 0;
+            let totalReceivedValue = 0;
+
+            activeOrders.forEach(o => {
+                let cost = parseFloat(o.unitCost) || 0;
+                if (cost === 0) {
+                    const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    cost = prod ? (parseFloat(prod.cost) || 0) : 0;
+                }
+                totalOrderedValue += (o.orderedQty * cost);
+                totalReceivedValue += (o.receivedQty * cost);
+            });
+
+            // Render Core Stat Cards
+            statCardsContainer.innerHTML = `
+                <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm flex items-center gap-4 animate-fade-in">
+                    <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <i class="fa-solid fa-file-invoice-dollar text-xl"></i>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">จำนวนครั้งที่สั่งซื้อ</span>
+                        <span class="font-extrabold text-slate-800 text-xl">${orderCount.toLocaleString()} ครั้ง</span>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm flex items-center gap-4 animate-fade-in">
+                    <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <i class="fa-solid fa-cart-shopping text-xl"></i>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">มูลค่ารวมตามสั่งซื้อ</span>
+                        <span class="font-extrabold text-amber-600 text-xl">฿${totalOrderedValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm flex items-center gap-4 animate-fade-in">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 shadow-sm">
+                        <i class="fa-solid fa-clipboard-check text-xl"></i>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">มูลค่ารวมได้รับจริง</span>
+                        <span class="font-extrabold text-emerald-600 text-xl">฿${totalReceivedValue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                    </div>
+                </div>
+            `;
+
+            // Month-by-month stats comparison
+            const monthlyData = {};
+            activeOrders.forEach(o => {
+                if (!o.orderDate || o.orderDate.length < 7) return;
+                const key = o.orderDate.substring(0, 7); // "YYYY-MM"
+                if (!monthlyData[key]) {
+                    monthlyData[key] = {
+                        count: 0,
+                        orderedVal: 0,
+                        receivedVal: 0
+                    };
+                }
+                let cost = parseFloat(o.unitCost) || 0;
+                if (cost === 0) {
+                    const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    cost = prod ? (parseFloat(prod.cost) || 0) : 0;
+                }
+                monthlyData[key].count++;
+                monthlyData[key].orderedVal += (o.orderedQty * cost);
+                monthlyData[key].receivedVal += (o.receivedQty * cost);
+            });
+
+            const sortedMonths = Object.keys(monthlyData).sort();
+
+            function getChangePct(curr, prev) {
+                if (prev === 0) return curr > 0 ? 100 : 0;
+                return ((curr - prev) / prev) * 100;
+            }
+
+            let monthlyComparisonsHtml = '';
+            for (let i = 0; i < sortedMonths.length; i++) {
+                const monthKey = sortedMonths[i];
+                const data = monthlyData[monthKey];
+                
+                const [year, month] = monthKey.split('-');
+                const monthNamesShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                const monthNameTh = monthNamesShort[parseInt(month) - 1] + ' ' + (parseInt(year) + 543);
+
+                let prevCount = 0;
+                let prevOrdered = 0;
+                let prevReceived = 0;
+                if (i > 0) {
+                    const prevKey = sortedMonths[i - 1];
+                    prevCount = monthlyData[prevKey].count;
+                    prevOrdered = monthlyData[prevKey].orderedVal;
+                    prevReceived = monthlyData[prevKey].receivedVal;
+                }
+
+                const countChange = getChangePct(data.count, prevCount);
+                const orderedChange = getChangePct(data.orderedVal, prevOrdered);
+                const receivedChange = getChangePct(data.receivedVal, prevReceived);
+
+                function formatBadge(pct) {
+                    if (i === 0) return `<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold font-mono">-</span>`;
+                    if (pct > 0.05) {
+                        return `<span class="text-[10px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-0.5 font-mono"><i class="fa-solid fa-arrow-trend-up"></i> +${pct.toFixed(1)}%</span>`;
+                    } else if (pct < -0.05) {
+                        return `<span class="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-bold inline-flex items-center gap-0.5 font-mono"><i class="fa-solid fa-arrow-trend-down"></i> ${pct.toFixed(1)}%</span>`;
+                    } else {
+                        return `<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold font-mono">0.0%</span>`;
+                    }
+                }
+
+                monthlyComparisonsHtml += `
+                    <div class="bg-slate-50/50 border border-slate-100 rounded-xl p-3 space-y-2">
+                        <div class="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                            <span class="font-bold text-slate-700 text-xs">${monthNameTh}</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                                <span class="text-[9px] text-slate-400 block font-semibold">สั่งซื้อ</span>
+                                <span class="font-bold text-slate-800 text-[11px] block">${data.count} ครั้ง</span>
+                                ${formatBadge(countChange)}
+                            </div>
+                            <div>
+                                <span class="text-[9px] text-slate-400 block font-semibold">ยอดสั่งซื้อ</span>
+                                <span class="font-bold text-slate-800 text-[11px] block truncate" title="฿${data.orderedVal.toLocaleString()}">฿${data.orderedVal.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                                ${formatBadge(orderedChange)}
+                            </div>
+                            <div>
+                                <span class="text-[9px] text-slate-400 block font-semibold">ได้รับจริง</span>
+                                <span class="font-bold text-slate-800 text-[11px] block truncate" title="฿${data.receivedVal.toLocaleString()}">฿${data.receivedVal.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                                ${formatBadge(receivedChange)}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (sortedMonths.length === 0) {
+                monthlyComparisonList.innerHTML = `
+                    <div class="text-center py-8 text-slate-400 text-xs">
+                        <i class="fa-solid fa-folder-open text-2xl mb-2 text-slate-300"></i>
+                        <p>ไม่มีข้อมูลเปรียบเทียบในรายเดือน</p>
+                    </div>
+                `;
+            } else {
+                monthlyComparisonList.innerHTML = monthlyComparisonsHtml;
+            }
+
+            // Draw SVG Line Chart
+            if (sortedMonths.length === 0) {
+                chartContainer.innerHTML = `
+                    <div class="text-center text-slate-400 text-xs">
+                        <i class="fa-solid fa-chart-line text-3xl mb-2 text-slate-300"></i>
+                        <p>ไม่มีข้อมูลประวัติสำหรับวาดกราฟ</p>
+                    </div>
+                `;
+            } else {
+                const w = 550;
+                const h = 250;
+                const paddingLeft = 60;
+                const paddingRight = 20;
+                const paddingTop = 30;
+                const paddingBottom = 40;
+
+                const chartWidth = w - paddingLeft - paddingRight;
+                const chartHeight = h - paddingTop - paddingBottom;
+
+                let maxVal = 1000;
+                sortedMonths.forEach(k => {
+                    const d = monthlyData[k];
+                    if (d.orderedVal > maxVal) maxVal = d.orderedVal;
+                    if (d.receivedVal > maxVal) maxVal = d.receivedVal;
+                });
+                const magnitude = Math.pow(10, Math.floor(Math.log10(maxVal)));
+                const step = magnitude / 2 || 100;
+                maxVal = Math.ceil(maxVal / step) * step;
+
+                const gridCount = 4;
+                let yGridHtml = '';
+                for (let idx = 0; idx <= gridCount; idx++) {
+                    const ratio = idx / gridCount;
+                    const val = maxVal * ratio;
+                    const y = h - paddingBottom - (ratio * chartHeight);
+                    let formattedVal = val.toLocaleString(undefined, {maximumFractionDigits: 0});
+                    if (val >= 1000000) {
+                        formattedVal = (val / 1000000).toFixed(1) + 'M';
+                    } else if (val >= 1000) {
+                        formattedVal = (val / 1000).toFixed(0) + 'K';
+                    }
+                    yGridHtml += `
+                        <line x1="${paddingLeft}" y1="${y}" x2="${w - paddingRight}" y2="${y}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3" />
+                        <text x="${paddingLeft - 8}" y="${y + 4}" fill="#64748b" font-size="9" text-anchor="end" font-family="sans-serif">${formattedVal}</text>
+                    `;
+                }
+
+                let xGridHtml = '';
+                const pointsOrdered = [];
+                const pointsReceived = [];
+
+                sortedMonths.forEach((k, idx) => {
+                    const d = monthlyData[k];
+                    let x = paddingLeft;
+                    if (sortedMonths.length > 1) {
+                        x += (idx / (sortedMonths.length - 1)) * chartWidth;
+                    } else {
+                        x += chartWidth / 2;
+                    }
+
+                    const yOrdered = h - paddingBottom - ((d.orderedVal / maxVal) * chartHeight);
+                    const yReceived = h - paddingBottom - ((d.receivedVal / maxVal) * chartHeight);
+
+                    pointsOrdered.push({x, y: yOrdered, val: d.orderedVal});
+                    pointsReceived.push({x, y: yReceived, val: d.receivedVal});
+
+                    const [year, month] = k.split('-');
+                    const shortYr = year.substring(2);
+                    const monthNamesShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                    const displayLabel = monthNamesShort[parseInt(month) - 1] + shortYr;
+
+                    xGridHtml += `
+                        <text x="${x}" y="${h - paddingBottom + 16}" fill="#64748b" font-size="9" text-anchor="middle" font-family="sans-serif">${displayLabel}</text>
+                        <line x1="${x}" y1="${paddingTop}" x2="${x}" y2="${h - paddingBottom}" stroke="#f1f5f9" stroke-width="1" />
+                    `;
+                });
+
+                function makePath(points) {
+                    if (points.length === 0) return '';
+                    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+                    let pathStr = `M ${points[0].x} ${points[0].y}`;
+                    for (let idx = 1; idx < points.length; idx++) {
+                        pathStr += ` L ${points[idx].x} ${points[idx].y}`;
+                    }
+                    return pathStr;
+                }
+
+                const pathOrdered = makePath(pointsOrdered);
+                const pathReceived = makePath(pointsReceived);
+
+                let circlesHtml = '';
+                pointsOrdered.forEach(p => {
+                    circlesHtml += `
+                        <circle cx="${p.x}" cy="${p.y}" r="4" fill="#3b82f6" stroke="#ffffff" stroke-width="1.5">
+                            <title>ตามสั่งซื้อ: ฿${p.val.toLocaleString()}</title>
+                        </circle>
+                    `;
+                });
+                pointsReceived.forEach(p => {
+                    circlesHtml += `
+                        <circle cx="${p.x}" cy="${p.y}" r="4" fill="#10b981" stroke="#ffffff" stroke-width="1.5">
+                            <title>ได้รับจริง: ฿${p.val.toLocaleString()}</title>
+                        </circle>
+                    `;
+                });
+
+                chartContainer.innerHTML = `
+                    <svg viewBox="0 0 ${w} ${h}" class="w-full h-full">
+                        ${yGridHtml}
+                        ${xGridHtml}
+                        ${pathOrdered ? `<path d="${pathOrdered}" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ''}
+                        ${pathReceived ? `<path d="${pathReceived}" fill="none" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />` : ''}
+                        ${circlesHtml}
+                        <g transform="translate(${paddingLeft}, 12)">
+                            <circle cx="5" cy="5" r="4" fill="#3b82f6" />
+                            <text x="15" y="8" fill="#1e293b" font-size="9" font-weight="bold" font-family="sans-serif">มูลค่ารวมตามสั่งซื้อ</text>
+                            <circle cx="130" cy="5" r="4" fill="#10b981" />
+                            <text x="140" y="8" fill="#1e293b" font-size="9" font-weight="bold" font-family="sans-serif">มูลค่ารวมได้รับจริง</text>
+                        </g>
+                    </svg>
+                `;
+            }
+
+            // Products Price Analytics
+            purchaseOverviewProducts = [];
+            products.forEach(p => {
+                const prodOrders = orders.filter(o => 
+                    String(o.productId).trim() === String(p.id).trim() && 
+                    (o.status === "สั่งแล้ว" || o.status === "ได้รับครบ" || o.status === "ค้างส่ง")
+                ).sort((a, b) => (a.orderDate || '').localeCompare(b.orderDate || ''));
+
+                if (prodOrders.length < 2) return;
+
+                const prices = prodOrders.map(o => {
+                    let c = parseFloat(o.unitCost) || 0;
+                    if (c === 0) c = parseFloat(p.cost) || 0;
+                    return c;
+                }).filter(c => c > 0);
+
+                if (prices.length < 2) return;
+
+                const firstPrice = prices[0];
+                const lastPrice = prices[prices.length - 1];
+                const minPrice = Math.min(...prices);
+                const maxPrice = Math.max(...prices);
+
+                const diff = lastPrice - firstPrice;
+                const pct = (diff / firstPrice) * 100;
+                const volatility = minPrice > 0 ? (((maxPrice - minPrice) / minPrice) * 100) : 0;
+
+                purchaseOverviewProducts.push({
+                    productId: p.id,
+                    productName: p.name,
+                    category: p.category || '',
+                    group: p.group || '',
+                    firstPrice,
+                    lastPrice,
+                    diff,
+                    pct,
+                    volatility,
+                    history: prodOrders.map((o, idx) => ({
+                        date: o.orderDate || '-',
+                        po: o.poNumber,
+                        pr: o.prNumber,
+                        qty: o.orderedQty,
+                        cost: prices[idx] || 0,
+                        supplier: o.supplier || p.supplier || 'ไม่ระบุ'
+                    }))
+                });
+            });
+
+            let filteredProductsAnalysis = purchaseOverviewProducts;
+            if (purchaseOverviewSearchQuery) {
+                filteredProductsAnalysis = filteredProductsAnalysis.filter(x => 
+                    x.productId.toLowerCase().includes(purchaseOverviewSearchQuery) ||
+                    x.productName.toLowerCase().includes(purchaseOverviewSearchQuery)
+                );
+            }
+            if (purchaseOverviewCategoryFilter) {
+                filteredProductsAnalysis = filteredProductsAnalysis.filter(x => x.category === purchaseOverviewCategoryFilter);
+            }
+            if (purchaseOverviewGroupFilter) {
+                filteredProductsAnalysis = filteredProductsAnalysis.filter(x => x.group === purchaseOverviewGroupFilter);
+            }
+
+            const topUps = [...filteredProductsAnalysis].filter(x => x.diff > 0.01).sort((a, b) => b.pct - a.pct).slice(0, 10);
+            const topDowns = [...filteredProductsAnalysis].filter(x => x.diff < -0.01).sort((a, b) => a.pct - b.pct).slice(0, 10);
+
+            topProductDowns.innerHTML = topDowns.map(x => `
+                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                    <td class="p-2 text-slate-700 font-semibold truncate max-w-[120px]" title="${escapeHTML(x.productName)}">
+                        <span class="font-mono text-[9px] text-slate-400 block">${escapeHTML(x.productId)}</span>
+                        ${escapeHTML(x.productName)}
+                    </td>
+                    <td class="p-2 text-right text-emerald-600 font-mono">฿${Math.abs(x.diff).toFixed(1)}</td>
+                    <td class="p-2 text-right text-emerald-600 font-bold font-mono">${x.pct.toFixed(1)}%</td>
+                </tr>
+            `).join('') || `<tr><td colspan="3" class="p-4 text-center text-slate-400">ไม่มีรายการราคาลดลง</td></tr>`;
+
+            topProductUps.innerHTML = topUps.map(x => `
+                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                    <td class="p-2 text-slate-700 font-semibold truncate max-w-[120px]" title="${escapeHTML(x.productName)}">
+                        <span class="font-mono text-[9px] text-slate-400 block">${escapeHTML(x.productId)}</span>
+                        ${escapeHTML(x.productName)}
+                    </td>
+                    <td class="p-2 text-right text-rose-600 font-mono">฿${x.diff.toFixed(1)}</td>
+                    <td class="p-2 text-right text-rose-600 font-bold font-mono">+${x.pct.toFixed(1)}%</td>
+                </tr>
+            `).join('') || `<tr><td colspan="3" class="p-4 text-center text-slate-400">ไม่มีรายการราคาเพิ่มขึ้น</td></tr>`;
+
+            // Drill down product select options
+            const prevDrillVal = drillProductSelect.value;
+            drillProductSelect.innerHTML = '<option value="">เลือกสินค้าเพื่อวิเคราะห์...</option>';
+            purchaseOverviewProducts.sort((a, b) => a.productName.localeCompare(b.productName)).forEach(x => {
+                const selectedAttr = x.productId === prevDrillVal ? 'selected' : '';
+                drillProductSelect.insertAdjacentHTML('beforeend', `
+                    <option value="${escapeHTML(x.productId)}" ${selectedAttr}>${escapeHTML(x.productName)} (${escapeHTML(x.productId)})</option>
+                `);
+            });
+            if (prevDrillVal && purchaseOverviewProducts.some(x => x.productId === prevDrillVal)) {
+                drillProductPriceTrend(prevDrillVal);
+            }
+
+            // Suppliers Price Analytics
+            purchaseOverviewSuppliers = [];
+            const supplierProducts = {};
+            orders.filter(o => 
+                o.status === "สั่งแล้ว" || o.status === "ได้รับครบ" || o.status === "ค้างส่ง"
+            ).forEach(o => {
+                const supplierName = o.supplier || 'ไม่ระบุ';
+                if (!supplierProducts[supplierName]) {
+                    supplierProducts[supplierName] = {};
+                }
+                const prodId = o.productId;
+                if (!supplierProducts[supplierName][prodId]) {
+                    supplierProducts[supplierName][prodId] = [];
+                }
+                const prod = products.find(p => String(p.id).trim() === String(prodId).trim());
+                let c = parseFloat(o.unitCost) || 0;
+                if (c === 0 && prod) c = parseFloat(prod.cost) || 0;
+                if (c > 0) {
+                    supplierProducts[supplierName][prodId].push({
+                        date: o.orderDate || '-',
+                        price: c,
+                        po: o.poNumber,
+                        pr: o.prNumber,
+                        qty: o.orderedQty,
+                        productName: o.productName
+                    });
+                }
+            });
+
+            Object.keys(supplierProducts).forEach(supName => {
+                const prodMap = supplierProducts[supName];
+                const productsList = Object.keys(prodMap);
+                
+                let totalPct = 0;
+                let totalVol = 0;
+                let countCalculated = 0;
+                const historyList = [];
+
+                productsList.forEach(prodId => {
+                    const priceLogs = prodMap[prodId].sort((a, b) => a.date.localeCompare(b.date));
+                    if (priceLogs.length < 2) return;
+
+                    const firstPrice = priceLogs[0].price;
+                    const lastPrice = priceLogs[priceLogs.length - 1].price;
+                    const minPrice = Math.min(...priceLogs.map(l => l.price));
+                    const maxPrice = Math.max(...priceLogs.map(l => l.price));
+
+                    const diff = lastPrice - firstPrice;
+                    const pct = (diff / firstPrice) * 100;
+                    const volatility = minPrice > 0 ? (((maxPrice - minPrice) / minPrice) * 100) : 0;
+
+                    totalPct += pct;
+                    totalVol += volatility;
+                    countCalculated++;
+
+                    priceLogs.forEach(log => {
+                        historyList.push({
+                            date: log.date,
+                            productId: prodId,
+                            productName: log.productName,
+                            price: log.price,
+                            po: log.po,
+                            pr: log.pr,
+                            qty: log.qty
+                        });
+                    });
+                });
+
+                if (countCalculated > 0) {
+                    const avgPct = totalPct / countCalculated;
+                    const avgVol = totalVol / countCalculated;
+
+                    purchaseOverviewSuppliers.push({
+                        supplierName: supName,
+                        avgPct,
+                        avgVol,
+                        history: historyList.sort((a, b) => a.date.localeCompare(b.date))
+                    });
+                }
+            });
+
+            let filteredSupplierAnalysis = purchaseOverviewSuppliers;
+            if (purchaseOverviewSearchQuery) {
+                filteredSupplierAnalysis = filteredSupplierAnalysis.filter(x => 
+                    x.supplierName.toLowerCase().includes(purchaseOverviewSearchQuery)
+                );
+            }
+
+            const topSupUps = [...filteredSupplierAnalysis].filter(x => x.avgPct > 0.01).sort((a, b) => b.avgPct - a.avgPct).slice(0, 10);
+            const topSupDowns = [...filteredSupplierAnalysis].filter(x => x.avgPct < -0.01).sort((a, b) => a.avgPct - b.avgPct).slice(0, 10);
+
+            topSupplierDowns.innerHTML = topSupDowns.map(x => `
+                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                    <td class="p-2 text-slate-700 font-semibold truncate max-w-[120px]" title="${escapeHTML(x.supplierName)}">
+                        ${escapeHTML(x.supplierName)}
+                    </td>
+                    <td class="p-2 text-right text-emerald-600 font-mono">${Math.abs(x.avgPct).toFixed(1)}%</td>
+                    <td class="p-2 text-right text-emerald-600 font-bold font-mono">${x.avgPct.toFixed(1)}%</td>
+                </tr>
+            `).join('') || `<tr><td colspan="3" class="p-4 text-center text-slate-400">ไม่มีรายการลดลง</td></tr>`;
+
+            topSupplierUps.innerHTML = topSupUps.map(x => `
+                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
+                    <td class="p-2 text-slate-700 font-semibold truncate max-w-[120px]" title="${escapeHTML(x.supplierName)}">
+                        ${escapeHTML(x.supplierName)}
+                    </td>
+                    <td class="p-2 text-right text-rose-600 font-mono">+${x.avgPct.toFixed(1)}%</td>
+                    <td class="p-2 text-right text-rose-600 font-bold font-mono">+${x.avgPct.toFixed(1)}%</td>
+                </tr>
+            `).join('') || `<tr><td colspan="3" class="p-4 text-center text-slate-400">ไม่มีรายการเพิ่มขึ้น</td></tr>`;
+
+            // Drill down supplier select options
+            const prevDrillSupVal = drillSupplierSelect.value;
+            drillSupplierSelect.innerHTML = '<option value="">เลือก Supplier...</option>';
+            purchaseOverviewSuppliers.sort((a, b) => a.supplierName.localeCompare(b.supplierName)).forEach(x => {
+                const selectedAttr = x.supplierName === prevDrillSupVal ? 'selected' : '';
+                drillSupplierSelect.insertAdjacentHTML('beforeend', `
+                    <option value="${escapeHTML(x.supplierName)}" ${selectedAttr}>${escapeHTML(x.supplierName)}</option>
+                `);
+            });
+            if (prevDrillSupVal && purchaseOverviewSuppliers.some(x => x.supplierName === prevDrillSupVal)) {
+                drillSupplierPriceTrend(prevDrillSupVal);
+            }
+        };
+
+        window.drillProductPriceTrend = function(productId) {
+            const timelineContainer = document.getElementById('product-drilldown-timeline');
+            if (!timelineContainer) return;
+
+            if (!productId) {
+                timelineContainer.classList.add('hidden');
+                timelineContainer.innerHTML = '';
+                return;
+            }
+
+            const prod = purchaseOverviewProducts.find(x => x.productId === productId);
+            if (!prod) {
+                timelineContainer.classList.add('hidden');
+                timelineContainer.innerHTML = '';
+                return;
+            }
+
+            timelineContainer.classList.remove('hidden');
+            let timelineHtml = `
+                <div class="text-[11px] font-bold text-slate-700 border-b border-slate-200 pb-1.5 mb-2 flex justify-between">
+                    <span>ประวัติราคา: ${escapeHTML(prod.productName)}</span>
+                    <span class="text-amber-600">ผันผวนสะสม: ${prod.volatility.toFixed(1)}%</span>
+                </div>
+            `;
+
+            prod.history.forEach((h, idx) => {
+                let diffText = '-';
+                if (idx > 0) {
+                    const prevCost = prod.history[idx - 1].cost;
+                    const change = h.cost - prevCost;
+                    const pct = prevCost > 0 ? (change / prevCost * 100) : 0;
+                    if (pct > 0.05) {
+                        diffText = `<span class="text-rose-600 font-bold"><i class="fa-solid fa-arrow-trend-up"></i> +${pct.toFixed(1)}%</span>`;
+                    } else if (pct < -0.05) {
+                        diffText = `<span class="text-emerald-600 font-bold"><i class="fa-solid fa-arrow-trend-down"></i> ${pct.toFixed(1)}%</span>`;
+                    } else {
+                        diffText = `<span class="text-slate-400">คงที่</span>`;
+                    }
+                }
+
+                timelineHtml += `
+                    <div class="flex items-center justify-between text-[10px] border-b border-slate-100 py-1.5 last:border-0">
+                        <div class="space-y-0.5">
+                            <div class="font-semibold text-slate-700">${escapeHTML(h.date)} &bull; PO: ${escapeHTML(h.po || '-')}</div>
+                            <div class="text-slate-400 text-[9px]">คู่ค้า: ${escapeHTML(h.supplier)} &bull; จำนวน: ${h.qty}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono font-bold text-slate-800">฿${h.cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                            <div>${diffText}</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            timelineContainer.innerHTML = timelineHtml;
+        };
+
+        window.drillSupplierPriceTrend = function(supplierName) {
+            const timelineContainer = document.getElementById('supplier-drilldown-timeline');
+            if (!timelineContainer) return;
+
+            if (!supplierName) {
+                timelineContainer.classList.add('hidden');
+                timelineContainer.innerHTML = '';
+                return;
+            }
+
+            const sup = purchaseOverviewSuppliers.find(x => x.supplierName === supplierName);
+            if (!sup) {
+                timelineContainer.classList.add('hidden');
+                timelineContainer.innerHTML = '';
+                return;
+            }
+
+            timelineContainer.classList.remove('hidden');
+            let timelineHtml = `
+                <div class="text-[11px] font-bold text-slate-700 border-b border-slate-200 pb-1.5 mb-2 flex justify-between">
+                    <span>ประวัติราคา: ${escapeHTML(sup.supplierName)}</span>
+                    <span class="text-indigo-600">ผันผวนเฉลี่ย: ${sup.avgVol.toFixed(1)}%</span>
+                </div>
+            `;
+
+            sup.history.forEach(h => {
+                timelineHtml += `
+                    <div class="flex items-center justify-between text-[10px] border-b border-slate-100 py-1.5 last:border-0">
+                        <div class="space-y-0.5">
+                            <div class="font-semibold text-slate-700">${escapeHTML(h.date)} &bull; PO: ${escapeHTML(h.po || '-')}</div>
+                            <div class="text-slate-500 font-medium">${escapeHTML(h.productName)} (${escapeHTML(h.productId)})</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-mono font-bold text-slate-800">฿${h.price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                            <div class="text-slate-400 text-[9px]">จำนวน: ${h.qty}</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            timelineContainer.innerHTML = timelineHtml;
         };

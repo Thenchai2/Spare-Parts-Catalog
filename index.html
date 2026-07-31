@@ -1406,16 +1406,18 @@
                         <!-- Grid -->
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             <!-- Card 1: รับสินค้า -->
-                            <div onclick="openPurchaseSubSection('receive', 'รับสินค้า', 'fa-dolly', 'from-emerald-500 to-teal-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                            <div id="card-purchase-receive" onclick="openPurchaseSubSection('receive', 'รับสินค้า', 'fa-dolly', 'from-emerald-500 to-teal-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
                                 <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
                                 <div class="flex justify-between items-start z-10">
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
                                         <i class="fa-solid fa-dolly text-2xl"></i>
                                     </div>
-                                    <span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
                                 </div>
                                 <div class="mt-6 z-10">
-                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">รับสินค้า</h3>
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-colors flex items-center gap-2">
+                                        รับสินค้า
+                                        <span id="count-purchase-receive" class="hidden text-xs bg-rose-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">0</span>
+                                    </h3>
                                     <p class="text-xs text-slate-500 mt-1 leading-relaxed">บันทึกรับรายการอะไหล่เข้าคลังและอัปเดตสต็อกสินค้า</p>
                                 </div>
                             </div>
@@ -1427,7 +1429,6 @@
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
                                         <i class="fa-solid fa-cart-plus text-2xl"></i>
                                     </div>
-                                    <span class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
                                 </div>
                                 <div class="mt-6 z-10">
                                     <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors">เพิ่มคำสั่งซื้อ</h3>
@@ -1442,10 +1443,12 @@
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
                                         <i class="fa-solid fa-tasks text-2xl"></i>
                                     </div>
-                                    <span class="text-[10px] font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
                                 </div>
                                 <div class="mt-6 z-10">
-                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-amber-600 transition-colors">จัดการคำสั่งซื้อ</h3>
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-amber-600 transition-colors flex items-center gap-2">
+                                        จัดการคำสั่งซื้อ
+                                        <span id="count-manage-orders" class="hidden text-xs bg-amber-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">0</span>
+                                    </h3>
                                     <p class="text-xs text-slate-500 mt-1 leading-relaxed">ตรวจสอบความคืบหน้า อนุมัติ หรือยกเลิกใบสั่งซื้อ</p>
                                 </div>
                             </div>
@@ -1457,7 +1460,6 @@
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
                                         <i class="fa-solid fa-clock-rotate-left text-2xl"></i>
                                     </div>
-                                    <span class="text-[10px] font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
                                 </div>
                                 <div class="mt-6 z-10">
                                     <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-colors">ประวัติการสั่งซื้อ</h3>
@@ -1466,13 +1468,12 @@
                             </div>
 
                             <!-- Card 5: ภาพรวมการสั่งซื้อ -->
-                            <div onclick="openPurchaseSubSection('overview', 'ภาพรวมการสั่งซื้อ', 'fa-chart-line', 'from-cyan-500 to-blue-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                            <div id="card-purchase-overview" onclick="openPurchaseSubSection('overview', 'ภาพรวมการสั่งซื้อ', 'fa-chart-line', 'from-cyan-500 to-blue-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
                                 <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-cyan-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
                                 <div class="flex justify-between items-start z-10">
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/20">
                                         <i class="fa-solid fa-chart-line text-2xl"></i>
                                     </div>
-                                    <span class="text-[10px] font-bold text-cyan-600 bg-cyan-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
                                 </div>
                                 <div class="mt-6 z-10">
                                     <h3 class="text-lg font-bold text-slate-800 group-hover:text-cyan-600 transition-colors">ภาพรวมการสั่งซื้อ</h3>
@@ -1487,7 +1488,6 @@
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
                                         <i class="fa-solid fa-table-list text-2xl"></i>
                                     </div>
-                                    <span class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-wider">Ready</span>
                                 </div>
                                 <div class="mt-6 z-10">
                                     <h3 class="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">แดชบอร์ดการสั่งซื้อ</h3>
@@ -1719,89 +1719,133 @@
                     <!-- Cards Grid -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 w-full max-w-7xl" id="settings-cards-container">
                         <!-- Card 1: ตั้งค่า USER -->
-                        <div onclick="openSelfSettingsModal()" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-blue-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group">
-                            <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-user-gear text-xl"></i>
+                        <div onclick="openSelfSettingsModal()" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                    <i class="fa-solid fa-user-gear text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-all duration-300">ตั้งค่า USER</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">แก้ไขข้อมูลส่วนตัวของคุณ เช่น ชื่อ-สกุล, แผนก/ฝ่ายงาน, เบอร์โทรศัพท์, อีเมล และเปลี่ยนรหัสผ่านใหม่</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors">ตั้งค่า USER</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">แก้ไขข้อมูลส่วนตัวของคุณ เช่น ชื่อ-สกุล, แผนก/ฝ่ายงาน, เบอร์โทรศัพท์, อีเมล และเปลี่ยนรหัสผ่านใหม่</p>
                             </div>
                         </div>
                         
                         <!-- Card 2: จัดการ USER -->
-                        <div id="card-admin-user-mgmt" onclick="switchView('view-user-management')" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-amber-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0 group-hover:bg-amber-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-users-gear text-xl"></i>
+                        <div id="card-admin-user-mgmt" onclick="switchView('view-user-management')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-amber-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
+                                    <i class="fa-solid fa-users-gear text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-amber-600 transition-all duration-300">จัดการ USER</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">บริหารจัดการสมาชิกในระบบ แก้ไขระดับสิทธิ์การใช้งาน (ADMIN, Manager, user), ลบสมาชิก หรือเลือกระดับราคาสินค้าที่เหมาะสม</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-amber-600 transition-colors">จัดการ USER</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">บริหารจัดการสมาชิกในระบบ แก้ไขระดับสิทธิ์การใช้งาน (ADMIN, Manager, user), ลบสมาชิก หรือเลือกระดับราคาสินค้าที่เหมาะสม</p>
                             </div>
                         </div>
+
                         <!-- Card 3: จับคู่อะไหล่-เครื่องจักร -->
-                        <div id="card-settings-mapping" onclick="switchView('view-mapping')" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-blue-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-link text-xl"></i>
+                        <div id="card-settings-mapping" onclick="switchView('view-mapping')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                    <i class="fa-solid fa-link text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-all duration-300">จับคู่อะไหล่-เครื่องจักร</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">เชื่อมโยงและสร้างความสัมพันธ์ระหว่างรายการอะไหล่กับเครื่องจักรต่าง ๆ ในระบบ</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors">จับคู่อะไหล่-เครื่องจักร</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">เชื่อมโยงและสร้างความสัมพันธ์ระหว่างรายการอะไหล่กับเครื่องจักรต่าง ๆ ในระบบ</p>
                             </div>
                         </div>
 
                         <!-- Card 4: รายการอะไหล่ -->
-                        <div id="card-settings-edit-products" onclick="switchView('view-edit-products')" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-emerald-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-list text-xl"></i>
+                        <div id="card-settings-edit-products" onclick="switchView('view-edit-products')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                    <i class="fa-solid fa-list text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-all duration-300">รายการอะไหล่</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">ตรวจสอบรายการอะไหล่ทั้งหมด ค้นหา แก้ไขราคา หรือปรับแต่งข้อมูลและภาพอะไหล่</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">รายการอะไหล่</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">ตรวจสอบรายการอะไหล่ทั้งหมด ค้นหา แก้ไขราคา หรือปรับแต่งข้อมูลและภาพอะไหล่</p>
                             </div>
                         </div>
 
-                        <!-- Card 8: จัดการเครื่องจักร -->
-                        <div id="card-settings-machines" onclick="switchView('view-machines')" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-purple-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-industry text-xl"></i>
+                        <!-- Card 5: จัดการเครื่องจักร -->
+                        <div id="card-settings-machines" onclick="switchView('view-machines')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-purple-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+                                    <i class="fa-solid fa-industry text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-all duration-300">จัดการเครื่องจักร</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">ตรวจสอบรายการเครื่องจักรทั้งหมด ค้นหา แก้ไข หรือลบเครื่องจักรออกจากระบบ</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-colors">จัดการเครื่องจักร</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">ตรวจสอบรายการเครื่องจักรทั้งหมด ค้นหา แก้ไข หรือลบเครื่องจักรออกจากระบบ</p>
                             </div>
                         </div>
 
                         <!-- Card 6: ประวัติการเติมสต็อกสินค้า -->
-                        <div id="card-settings-restock-history" onclick="switchView('view-restock-history'); initRestockHistoryView();" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-sky-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-clock-rotate-left text-xl"></i>
+                        <div id="card-settings-restock-history" onclick="switchView('view-restock-history'); initRestockHistoryView();" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-sky-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-sky-500/20">
+                                    <i class="fa-solid fa-clock-rotate-left text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-sky-600 transition-all duration-300">ประวัติการเติมสต็อก</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">ดูประวัติและบันทึกการปรับปรุงสต็อก (เพิ่ม/ลด/กำหนดใหม่) ของอะไหล่แต่ละชนิด</p>
-                            </div>
-                        </div>
-
-                        <!-- Card 5: ดู/แก้ไขการจับคู่ -->
-                        <div id="card-settings-edit-mapping" onclick="switchView('view-edit-mapping')" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-indigo-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-table-list text-xl"></i>
-                            </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-all duration-300">ดู/แก้ไขการจับคู่</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">ดูตารางการจับคู่เครื่องจักรกับอะไหล่ ค้นหา และกดยกเลิกการเชื่อมโยงความสัมพันธ์ได้</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-sky-600 transition-colors">ประวัติการเติมสต็อก</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">ดูประวัติและบันทึกการปรับปรุงสต็อก (เพิ่ม/ลด/กำหนดใหม่) ของอะไหล่แต่ละชนิด</p>
                             </div>
                         </div>
 
-                        <!-- Card 7: จัดการคู่มือ -->
-                        <div id="card-settings-manage-manuals" onclick="switchView('view-manage-manuals'); initManageManualsView();" class="bg-white rounded-2xl border border-gray-150 p-6 hover:shadow-xl hover:border-purple-200 transition-all duration-300 cursor-pointer flex gap-4 items-start group hidden">
-                            <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center flex-shrink-0 group-hover:bg-purple-600 group-hover:text-white transition-all duration-300">
-                                <i class="fa-solid fa-book-bookmark text-xl"></i>
+                        <!-- Card 7: ดู/แก้ไขการจับคู่ -->
+                        <div id="card-settings-edit-mapping" onclick="switchView('view-edit-mapping')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-indigo-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                                    <i class="fa-solid fa-table-list text-2xl"></i>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-all duration-300">จัดการคู่มือ</h3>
-                                <p class="text-xs text-slate-500 mt-1.5 leading-relaxed">อัพโหลดคู่มือการใช้งานระบบ (ภาพ/PDF) แก้ไข และบริหารจัดการรายการคู่มือ</p>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">ดู/แก้ไขการจับคู่</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">ดูตารางการจับคู่เครื่องจักรกับอะไหล่ ค้นหา และกดยกเลิกการเชื่อมโยงความสัมพันธ์ได้</p>
+                            </div>
+                        </div>
+
+                        <!-- Card 8: จัดการคู่มือ -->
+                        <div id="card-settings-manage-manuals" onclick="switchView('view-manage-manuals'); initManageManualsView();" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-purple-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+                                    <i class="fa-solid fa-book-bookmark text-2xl"></i>
+                                </div>
+                            </div>
+                            <div class="mt-6 z-10">
+                                <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-colors">จัดการคู่มือ</h3>
+                                <p class="text-xs text-slate-500 mt-1 leading-relaxed">อัพโหลดคู่มือการใช้งานระบบ (ภาพ/PDF) แก้ไข และบริหารจัดการรายการคู่มือ</p>
+                        <!-- Card 9: สำรองข้อมูลระบบ (ADMIN) -->
+                        <div id="card-settings-backup" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 overflow-hidden flex flex-col justify-between min-h-[200px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shadow-lg shadow-red-500/20">
+                                    <i class="fa-solid fa-database text-2xl"></i>
+                                </div>
+                            </div>
+                            <div class="mt-4 z-10 w-full">
+                                <h3 class="text-lg font-bold text-slate-800 transition-colors">สำรองข้อมูลระบบ (ADMIN)</h3>
+                                <p class="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">สำรองข้อมูลจาก Firebase เก็บเป็นไฟล์ JSON หรือ Google Sheet ด้วยตนเอง</p>
+                                <div class="flex flex-col sm:flex-row gap-2 w-full">
+                                    <button onclick="runManualBackup('json')" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold py-2 px-3 rounded-xl transition-all duration-200 shadow-sm flex items-center justify-center gap-1.5">
+                                        <i class="fa-solid fa-file-code"></i> สำรองไฟล์ JSON
+                                    </button>
+                                    <button onclick="runManualBackup('sheet')" class="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold py-2 px-3 rounded-xl transition-all duration-200 shadow-sm flex items-center justify-center gap-1.5">
+                                        <i class="fa-solid fa-file-excel"></i> สำรองไฟล์ Sheet
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2392,6 +2436,25 @@
     <datalist id="list_machine_groups"></datalist>
     <datalist id="list_machine_suppliers"></datalist>
     <datalist id="list_machine_storages"></datalist>
+
+    <!-- Firebase SDK (Compat Version for Vanilla JS) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics-compat.js"></script>
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBlg7rvhtJnQS1_NplnEXjnvXPGv-cSyNI",
+        authDomain: "ltd-laundry.firebaseapp.com",
+        databaseURL: "https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "ltd-laundry",
+        storageBucket: "ltd-laundry.firebasestorage.app",
+        messagingSenderId: "869860390939",
+        appId: "1:869860390939:web:b77bdbe17342efccdee0be",
+        measurementId: "G-JHCWYTNE1G"
+      };
+      // Initialize Firebase & Analytics
+      firebase.initializeApp(firebaseConfig);
+      firebase.analytics();
+    </script>
 
     <script src="app.js"></script>
 </body>
