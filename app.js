@@ -8770,6 +8770,9 @@ function exportReportToExcel() {
 // ==========================================
 
 const BYPASS_ACTIONS = [
+    'editProduct',
+    'editMachine',
+    'editManual',
     'getTransactions',
     'checkoutOrder',
     'restockProduct',
@@ -8808,6 +8811,15 @@ function getFormattedDateTimeString() {
 async function handleActionDirectlyOnFirebase(action, payload) {
     try {
         switch (action) {
+            case 'editProduct':
+                await executeDirectEditProduct(payload);
+                return { status: 'success', message: 'บันทึกแก้ไขสินค้าสำเร็จ' };
+            case 'editMachine':
+                await executeDirectEditMachine(payload);
+                return { status: 'success', message: 'บันทึกแก้ไขเครื่องจักรสำเร็จ' };
+            case 'editManual':
+                const manualRes = await executeDirectEditManual(payload);
+                return { status: 'success', data: manualRes, message: 'บันทึกแก้ไขคู่มือสำเร็จ' };
             case 'getTransactions':
                 return { status: 'success', data: await executeDirectGetTransactions() };
             case 'loginUser':
@@ -8869,6 +8881,67 @@ async function handleActionDirectlyOnFirebase(action, payload) {
 }
 
 let transactionsCache = null;
+
+async function executeDirectEditProduct(payload) {
+    const snapshot = await firebase.database().ref('appData/products').get();
+    let products = ensureArray(snapshot.val());
+    const index = products.findIndex(p => String(p.id).trim() === String(payload.id).trim());
+    if (index === -1) throw new Error("ไม่พบรหัสสินค้าที่ต้องการแก้ไข");
+    const oldProduct = products[index];
+    const cost = parseFloat(payload.cost) || 0;
+    
+    let factorA = 1.05, factorB = 1.10, factorC = 1.20;
+    if (cost >= 10000) { factorA = 1.02; factorB = 1.05; factorC = 1.10; }
+    else if (cost >= 5000) { factorA = 1.03; factorB = 1.07; factorC = 1.15; }
+    
+    const pA = parseFloat(payload.price_a) > 0 ? parseFloat(payload.price_a) : Math.ceil(cost * factorA);
+    const pB = parseFloat(payload.price_b) > 0 ? parseFloat(payload.price_b) : Math.ceil(cost * factorB);
+    const pC = parseFloat(payload.price_c) > 0 ? parseFloat(payload.price_c) : Math.ceil(cost * factorC);
+    const stockQty = (payload.stock_qty !== undefined && payload.stock_qty !== "") ? parseFloat(payload.stock_qty) : (parseFloat(oldProduct.stock_qty) || 0);
+    
+    products[index] = {
+        id: payload.id, name: payload.name, unit: payload.unit, cost: cost,
+        price_a: pA, price_b: pB, price_c: pC,
+        category: payload.category, note: payload.note, image_url: oldProduct.image_url || "",
+        stock_qty: stockQty, group: payload.group || "", supplier: payload.supplier || "", storage: payload.storage || ""
+    };
+    await firebase.database().ref('appData/products').set(products);
+    db.products = products;
+    invalidateLocalCache();
+}
+
+async function executeDirectEditMachine(payload) {
+    const snapshot = await firebase.database().ref('appData/machines').get();
+    let machines = ensureArray(snapshot.val());
+    const index = machines.findIndex(m => String(m.id).trim() === String(payload.id).trim());
+    if (index === -1) throw new Error("ไม่พบเครื่องจักรที่ต้องการแก้ไข");
+    const oldMachine = machines[index];
+    machines[index] = {
+        id: payload.id, name: payload.name, image_url: oldMachine.image_url || "", cost: parseFloat(payload.cost) || 0,
+        price_a: parseFloat(payload.price_a) || 0, price_b: parseFloat(payload.price_b) || 0, price_c: parseFloat(payload.price_c) || 0,
+        note: payload.note || "", group: payload.group || "", supplier: payload.supplier || "", storage: payload.storage || ""
+    };
+    await firebase.database().ref('appData/machines').set(machines);
+    db.machines = machines;
+    invalidateLocalCache();
+}
+
+async function executeDirectEditManual(payload) {
+    const snapshot = await firebase.database().ref('appData/manuals').get();
+    let manuals = ensureArray(snapshot.val());
+    const index = manuals.findIndex(m => String(m.id).trim() === String(payload.id).trim());
+    if (index === -1) throw new Error("ไม่พบคู่มือที่ต้องการแก้ไข");
+    const oldManual = manuals[index];
+    manuals[index] = {
+        id: payload.id, title: payload.title || "", description: payload.description || "",
+        file_url: oldManual.file_url || "", file_type: payload.file_type || oldManual.file_type,
+        uploaded_at: oldManual.uploaded_at || ""
+    };
+    await firebase.database().ref('appData/manuals').set(manuals);
+    db.manuals = manuals;
+    invalidateLocalCache();
+    return { file_url: oldManual.file_url || "" };
+}
 
 async function executeDirectGetTransactions() {
     if (transactionsCache) {
@@ -8933,6 +9006,7 @@ async function executeDirectRegister(payload) {
     };
     users.push(newUser);
     await firebase.database().ref('users').set(users);
+    invalidateLocalCache();
 }
 
 async function executeDirectGetUsersList(payload) {
@@ -8959,6 +9033,7 @@ async function executeDirectUpdateUserByAdmin(payload) {
         users[index].passwordHash = await sha256(payload.password);
     }
     await firebase.database().ref('users').set(users);
+    invalidateLocalCache();
 }
 
 async function executeDirectDeleteUserByAdmin(payload) {
@@ -8968,6 +9043,7 @@ async function executeDirectDeleteUserByAdmin(payload) {
     
     users = users.filter(u => String(u.email || "").toLowerCase() !== email);
     await firebase.database().ref('users').set(users);
+    invalidateLocalCache();
 }
 
 async function executeDirectUpdateSelfProfile(payload) {
@@ -8993,6 +9069,7 @@ async function executeDirectUpdateSelfProfile(payload) {
     }
     
     await firebase.database().ref('users').set(users);
+    invalidateLocalCache();
     
     return {
         fullName: users[index].fullName,
@@ -9130,6 +9207,7 @@ async function executeDirectCheckout(payload) {
     db.products = products;
     db.lots = lots;
     db.transactions = transactions;
+    invalidateLocalCache();
     
     return { transaction_id: txId, items: checkoutItems };
 }
@@ -9208,6 +9286,7 @@ async function executeDirectRestock(payload) {
     db.products = products;
     db.lots = lots;
     db.transactions = transactions;
+    invalidateLocalCache();
     
     return { new_stock: product.stock_qty, transaction_id: nextTxId, lot_id: lotId };
 }
@@ -9252,6 +9331,7 @@ async function executeDirectCancelTransaction(payload) {
     db.products = products;
     db.lots = lots;
     db.transactions = transactions;
+    invalidateLocalCache();
 }
 
 async function executeDirectDeleteTransaction(payload) {
@@ -9264,6 +9344,7 @@ async function executeDirectDeleteTransaction(payload) {
     await firebase.database().ref('transactions').set(transactions);
     transactionsCache = null; // Invalidate cache
     db.transactions = transactions;
+    invalidateLocalCache();
 }
 
 async function executeDirectAddMapping(payload) {
@@ -9287,6 +9368,7 @@ async function executeDirectAddMapping(payload) {
     if (isModified) {
         await firebase.database().ref('mappings').set(mappings);
         db.mappings = mappings;
+        invalidateLocalCache();
     } else {
         throw new Error("รายการอะไหล่ที่เลือก ถูกจับคู่กับเครื่องจักรนี้อยู่แล้วทั้งหมด");
     }
@@ -9302,11 +9384,13 @@ async function executeDirectDeleteMapping(payload) {
     
     await firebase.database().ref('mappings').set(mappings);
     db.mappings = mappings;
+    invalidateLocalCache();
 }
 
 async function executeDirectSaveSettings(payload) {
     await firebase.database().ref('appData/settings').set(payload);
     db.settings = payload;
+    invalidateLocalCache();
 }
 
 async function executeDirectAddPurchaseOrderDraft(payload) {
@@ -9350,6 +9434,7 @@ async function executeDirectAddPurchaseOrderDraft(payload) {
     purchaseOrders.push(newPo);
     await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
     db.purchaseOrders = purchaseOrders;
+    invalidateLocalCache();
     
     return newPo;
 }
@@ -9371,6 +9456,7 @@ async function executeDirectEditPurchaseOrderDraft(payload) {
     
     await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
     db.purchaseOrders = purchaseOrders;
+    invalidateLocalCache();
 }
 
 async function executeDirectDeletePurchaseOrderDraft(payload) {
@@ -9383,6 +9469,7 @@ async function executeDirectDeletePurchaseOrderDraft(payload) {
     
     await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
     db.purchaseOrders = purchaseOrders;
+    invalidateLocalCache();
 }
 
 async function executeDirectDeletePurchaseOrderActive(payload) {
@@ -9394,6 +9481,7 @@ async function executeDirectDeletePurchaseOrderActive(payload) {
     
     await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
     db.purchaseOrders = purchaseOrders;
+    invalidateLocalCache();
 }
 
 async function executeDirectUpdatePurchaseOrderDraft(payload) {
@@ -9424,6 +9512,7 @@ async function executeDirectUpdatePurchaseOrderDraft(payload) {
     
     await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
     db.purchaseOrders = purchaseOrders;
+    invalidateLocalCache();
 }
 
 async function executeDirectReceivePurchaseGoods(payload) {
@@ -9531,6 +9620,7 @@ async function executeDirectReceivePurchaseGoods(payload) {
     transactionsCache = null; // Invalidate cache
     
     db.purchaseOrders = purchaseOrders;
+    invalidateLocalCache();
     db.products = products;
     db.lots = lots;
     db.transactions = transactions;
@@ -9538,14 +9628,23 @@ async function executeDirectReceivePurchaseGoods(payload) {
     return { status: "success", poNumber: poNum };
 }
 
-const ensureArray = (val) => {
+function ensureArray(val) {
     if (!val) return [];
     if (Array.isArray(val)) return val;
     if (typeof val === 'object') {
         return Object.keys(val).sort((a, b) => Number(a) - Number(b)).map(key => val[key]);
     }
     return [];
-};
+}
+
+function invalidateLocalCache() {
+    try {
+        localStorage.removeItem('spareparts_cache_v1');
+        console.log("[Firebase Bypass] LocalStorage cache invalidated.");
+    } catch (e) {
+        console.error("Failed to clear localStorage cache: ", e);
+    }
+}
 
 // Global Fetch Interceptor to bypass Apps Script
 const originalFetch = window.fetch;
@@ -9557,12 +9656,21 @@ window.fetch = async function (url, options) {
             const payload = body.payload;
             
             if (BYPASS_ACTIONS.includes(action)) {
-                console.log(`[Firebase Bypass] Intercepting action: ${action}`);
-                const result = await handleActionDirectlyOnFirebase(action, payload);
-                return new Response(JSON.stringify(result), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                // If there's an image/file upload, let it go to Apps Script
+                if (action === 'editProduct' && payload && payload.imageBase64) {
+                    console.log(`[Firebase Bypass] editProduct has image, letting Apps Script handle it.`);
+                } else if (action === 'editMachine' && payload && payload.imageBase64) {
+                    console.log(`[Firebase Bypass] editMachine has image, letting Apps Script handle it.`);
+                } else if (action === 'editManual' && payload && payload.file_url && payload.file_url.indexOf("data:") === 0) {
+                    console.log(`[Firebase Bypass] editManual has file payload, letting Apps Script handle it.`);
+                } else {
+                    console.log(`[Firebase Bypass] Intercepting action: ${action}`);
+                    const result = await handleActionDirectlyOnFirebase(action, payload);
+                    return new Response(JSON.stringify(result), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
             }
         } catch (e) {
             console.error("Fetch interceptor parse error: ", e);
