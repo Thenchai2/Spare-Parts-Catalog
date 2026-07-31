@@ -1,287 +1,2360 @@
-// ซอร์สโค้ดสำหรับ Google Apps Script (GAS) - แยกเก็บไฟล์ JSON และรูปภาพ
-const IMAGE_FOLDER_ID = "1psCFMOXqH0iECEMWJSBX_4uL0vfajhDO"; // โฟลเดอร์สำหรับเก็บรูปภาพและโฟลเดอร์ถัง
-const JSON_FOLDER_ID = "1JKBSMhRY0hHwkB3y8V3cJR-TZwnKUIU8";  // โฟลเดอร์สำหรับเก็บไฟล์ JSON (แยกออกจากรูปภาพ)
-const FOLDER_ID = IMAGE_FOLDER_ID; // alias เพื่อรองรับการทำงานเดิม
-const FILE_NAME = "pk_tank_data_database.json";
+// กำหนด Sheet ID และ Drive Folder ID
+const SPREADSHEET_ID = '1BXSx-oHxPqG0GL2avbx7HLDZ434o_7V5qSkcMeXO3zA';
+const DRIVE_FOLDER_ID = '1owAFo5uLYB3pxc-KoaOdCbN5d1ieUISp';
+const JSON_FOLDER_ID = '1M9ACDcQB3QdyDgAd9HfsToxbTOx01-Gc';
+const FIREBASE_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app/';
+const FIREBASE_SECRET = ''; // ใส่ Database Secret หากมีการล็อกสิทธิ์เขียนไว้ (ถ้าตั้ง Rules เป็น .write: true ไม่ต้องใส่)
+// กำหนด Sheet ID และ Drive Folder ID
 
-// ฟังก์ชันค้นหาหรือสร้างโฟลเดอร์ย่อยตามชื่อถัง (Tank Folder)
-function getOrCreateTankFolder(rootFolder, folderName) {
-  if (!folderName) return rootFolder;
-  var name = folderName.trim();
-  if (!name) return rootFolder;
-  
-  var subFolders = rootFolder.getFoldersByName(name);
-  if (subFolders.hasNext()) {
-    return subFolders.next();
-  } else {
-    return rootFolder.createFolder(name);
+
+// ฟังก์ชันเมื่อมีการเรียกหน้าเว็บโดยตรง
+function doGet(e) {
+  if (e.parameter.action === 'getAppData') {
+    return ContentService.createTextOutput(JSON.stringify(getAppData()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+  return HtmlService.createHtmlOutput('API Backend สำหรับแคตตาล็อกอะไหล่เครื่องจักรทำงานปกติ');
+}
+
+// ฟังก์ชันสำหรับรับข้อมูลแบบ POST จาก Frontend (เช่น การเพิ่ม/แก้ไข/ลบข้อมูล)
+function doPost(e) {
+  try {
+    let request = JSON.parse(e.postData.contents);
+    let action = request.action;
+    let payload = request.payload;
+    let response = { status: 'success', message: '' };
+
+    if (action === 'initDatabase') {
+      initDatabase();
+      response.message = 'ตรวจสอบและสร้างฐานข้อมูลสำเร็จ';
+    } 
+    else if (action === 'addProduct') {
+      response.data = addProduct(payload);
+      response.message = 'เพิ่มอะไหล่สำเร็จ';
+    }
+    else if (action === 'editProduct') {
+      editProduct(payload);
+      response.message = 'แก้ไขอะไหล่สำเร็จ';
+    }
+    else if (action === 'deleteProduct') {
+      deleteProduct(payload.id);
+      response.message = 'ลบอะไหล่สำเร็จ';
+    }
+    else if (action === 'addMachine') {
+      addMachine(payload);
+      response.message = 'เพิ่มเครื่องจักรสำเร็จ';
+    }
+    else if (action === 'editMachine') {
+      editMachine(payload);
+      response.message = 'แก้ไขเครื่องจักรสำเร็จ';
+    }
+    else if (action === 'deleteMachine') {
+      deleteMachine(payload.id);
+      response.message = 'ลบเครื่องจักรสำเร็จ';
+    }
+    else if (action === 'addMapping') {
+      addMapping(payload);
+      response.message = 'บันทึกการจับคู่สำเร็จ';
+    }
+    else if (action === 'deleteMapping') {
+      deleteMapping(payload);
+      response.message = 'ลบการจับคู่สำเร็จ';
+    }
+    else if (action === 'saveSettings') {
+      saveSettings(payload);
+      response.message = 'บันทึกการตั้งค่าสำเร็จ';
+    }
+    else if (action === 'checkoutOrder') {
+      response.data = checkoutOrder(payload);
+      response.message = 'บันทึกใบเบิกและหักสต็อกสำเร็จ';
+    }
+    else if (action === 'restockProduct') {
+      response.data = restockProduct(payload);
+      response.message = 'เติมสต็อกสำเร็จ';
+    }
+    else if (action === 'bulkRestockProducts') {
+      response.data = bulkRestockProducts(payload);
+      response.message = 'ปรับสต็อกหลายรายการสำเร็จ';
+    }
+    else if (action === 'receivePurchaseGoods') {
+      response.data = receivePurchaseGoods(payload);
+      response.message = 'บันทึกการรับสินค้าเข้าคลังสำเร็จ';
+    }
+    else if (action === 'addPurchaseOrderDraft') {
+      response.data = addPurchaseOrderDraft(payload);
+      response.message = 'เพิ่มรายการเตรียมสั่งซื้อสำเร็จ';
+    }
+    else if (action === 'editPurchaseOrderDraft') {
+      response.data = editPurchaseOrderDraft(payload);
+      response.message = 'แก้ไขรายการเตรียมสั่งซื้อสำเร็จ';
+    }
+    else if (action === 'deletePurchaseOrderDraft') {
+      response.data = deletePurchaseOrderDraft(payload);
+      response.message = 'ลบรายการเตรียมสั่งซื้อสำเร็จ';
+    }
+    else if (action === 'deletePurchaseOrderActive') {
+      response.data = deletePurchaseOrderActive(payload);
+      response.message = 'ลบรายการสั่งซื้อสำเร็จ';
+    }
+    else if (action === 'updatePurchaseOrderDraft') {
+      response.data = updatePurchaseOrderDraft(payload);
+      response.message = 'อัปเดตใบสั่งซื้อสำเร็จ';
+    }
+    else if (action === 'getTransactions') {
+      response.data = getTransactions();
+      response.message = 'ดึงข้อมูลประวัติการเบิกสำเร็จ';
+    }
+    else if (action === 'getLots') {
+      response.data = getLotsFromJson();
+      response.message = 'ดึงข้อมูล Lot ทั้งหมดสำเร็จ';
+    }
+    else if (action === 'cancelTransaction') {
+      response.data = cancelTransaction(payload);
+      response.message = 'ยกเลิกใบเบิกและคืนสต็อกสำเร็จ';
+    }
+    else if (action === 'deleteTransaction') {
+      response.data = deleteTransaction(payload);
+      response.message = 'ลบประวัติใบเบิกสำเร็จ';
+    }
+    else if (action === 'registerUser') {
+      response.data = registerUser(payload);
+      response.message = 'สมัครสมาชิกสำเร็จ';
+    }
+    else if (action === 'loginUser') {
+      response.data = loginUser(payload);
+      response.message = 'เข้าสู่ระบบสำเร็จ';
+    }
+    else if (action === 'getUsersList') {
+      response.data = getUsersList(payload);
+      response.message = 'ดึงรายชื่อผู้ใช้สำเร็จ';
+    }
+    else if (action === 'updateUserByAdmin') {
+      response.data = updateUserByAdmin(payload);
+      response.message = 'แก้ไขข้อมูลผู้ใช้สำเร็จ';
+    }
+    else if (action === 'deleteUserByAdmin') {
+      response.data = deleteUserByAdmin(payload);
+      response.message = 'ลบผู้ใช้สำเร็จ';
+    }
+    else if (action === 'updateSelfProfile') {
+      response.data = updateSelfProfile(payload);
+      response.message = 'ปรับปรุงโปรไฟล์สำเร็จ';
+    }
+    else if (action === 'addManual') {
+      response.data = addManual(payload);
+      response.message = 'เพิ่มคู่มือสำเร็จ';
+    }
+    else if (action === 'editManual') {
+      response.data = editManual(payload);
+      response.message = 'แก้ไขคู่มือสำเร็จ';
+    }
+    else if (action === 'deleteManual') {
+      deleteManual(payload.id);
+      response.message = 'ลบคู่มือสำเร็จ';
+    }
+    else if (action === 'backupFirebaseToDrive') {
+      backupFirebaseToDrive();
+      response.message = 'สำรองไฟล์ JSON ลง Google Drive สำเร็จ';
+    }
+    else if (action === 'backupFirebaseToSheets') {
+      backupFirebaseToSheets();
+      response.message = 'สำรองข้อมูลลง Google Sheet สำเร็จ';
+    }
+
+
+
+    return ContentService.createTextOutput(JSON.stringify(response))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
-// ฟังก์ชันลบโฟลเดอร์ของถังออกจาก Drive (ย้ายลงถังขยะ)
-function deleteTankFolder(rootFolder, folderName) {
-  if (!folderName) return;
-  var name = folderName.trim();
-  if (!name) return;
+// ฟังก์ชันสำหรับตรวจเช็คและสร้างชีตอัตโนมัติหากยังไม่มี
+function initDatabase() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   
+  // ตรวจสอบและสร้างชีต Products
+  const pSheet = ss.getSheetByName("Products");
+  if (!pSheet) {
+    const sheet = ss.insertSheet("Products");
+    sheet.appendRow(["Product_ID", "Product_Name", "Unit", "Cost", "Price_A", "Price_B", "Price_C", "Category", "Note", "Image_URL", "Stock_Qty", "Product_Group", "Supplier", "Storage_Area"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#d9ead3");
+  } else {
+    const lastCol = pSheet.getLastColumn();
+    if (lastCol < 11) pSheet.getRange(1, 11).setValue("Stock_Qty");
+    if (lastCol < 12) pSheet.getRange(1, 12).setValue("Product_Group");
+    if (lastCol < 13) pSheet.getRange(1, 13).setValue("Supplier");
+    if (lastCol < 14) pSheet.getRange(1, 14).setValue("Storage_Area");
+    pSheet.getRange("1:1").setFontWeight("bold");
+  }
+  
+  // ตรวจสอบและสร้างชีต Machines
+  if (!ss.getSheetByName("Machines")) {
+    const sheet = ss.insertSheet("Machines");
+    sheet.appendRow(["Machine_ID", "Machine_Name", "Image_URL", "Cost", "Price_A", "Price_B", "Price_C", "Note", "Machine_Group", "Supplier", "Storage_Area"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#c9daf8");
+  } else {
+    // ถ้าชีตมีอยู่แล้ว ตรวจว่ามี column ขาดหายไปหรือไม่
+    const mSheet = ss.getSheetByName("Machines");
+    const lastCol = mSheet.getLastColumn();
+    if (lastCol < 3) mSheet.getRange(1, 3).setValue("Image_URL");
+    if (lastCol < 4) mSheet.getRange(1, 4).setValue("Cost");
+    if (lastCol < 5) mSheet.getRange(1, 5).setValue("Price_A");
+    if (lastCol < 6) mSheet.getRange(1, 6).setValue("Price_B");
+    if (lastCol < 7) mSheet.getRange(1, 7).setValue("Price_C");
+    if (lastCol < 8) mSheet.getRange(1, 8).setValue("Note");
+    if (lastCol < 9) mSheet.getRange(1, 9).setValue("Machine_Group");
+    if (lastCol < 10) mSheet.getRange(1, 10).setValue("Supplier");
+    if (lastCol < 11) mSheet.getRange(1, 11).setValue("Storage_Area");
+    mSheet.getRange("1:1").setFontWeight("bold");
+  }
+  
+  // ตรวจสอบและสร้างชีต Settings
+  if (!ss.getSheetByName("Settings")) {
+    const sheet = ss.insertSheet("Settings");
+    sheet.appendRow(["Key", "Value"]);
+    sheet.appendRow(["isShowPriceBForGuest", "false"]);
+    sheet.appendRow(["isShowPriceCForGuest", "false"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#fff2cc");
+  }
+  
+  // ตรวจสอบและสร้างชีต Transactions (เก็บไว้เป็น Backup โครงสร้างเดิม)
+  if (!ss.getSheetByName("Transactions")) {
+    const sheet = ss.insertSheet("Transactions");
+    sheet.appendRow(["Transaction_ID", "Date", "Requester", "Department", "Machine_ID", "Total_Price", "Note", "Status"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#c9daf8");
+  }
+
+  // ตรวจสอบและสร้างชีต Transaction_Details (เก็บไว้เป็น Backup โครงสร้างเดิม)
+  if (!ss.getSheetByName("Transaction_Details")) {
+    const sheet = ss.insertSheet("Transaction_Details");
+    sheet.appendRow(["Detail_ID", "Transaction_ID", "Product_ID", "Qty", "Price_Used", "Subtotal"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#ead1dc");
+  }
+
+  // ตรวจสอบและสร้างชีต Manuals
+  if (!ss.getSheetByName("Manuals")) {
+    const sheet = ss.insertSheet("Manuals");
+    sheet.appendRow(["Manual_ID", "Title", "Description", "File_URL", "File_Type", "Uploaded_At"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#d9d2e9");
+  }
+
+  // ตรวจสอบและสร้างชีต PurchaseOrders
+  const poSheet = ss.getSheetByName("PurchaseOrders");
+  if (!poSheet) {
+    const sheet = ss.insertSheet("PurchaseOrders");
+    sheet.appendRow(["PO_Number", "PR_Number", "Product_ID", "Product_Name", "Order_Date", "Ordered_Qty", "Received_Qty", "Last_Received_Date", "Status", "Unit_Cost", "Total_Cost", "Supplier"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#d9d2e9");
+    
+    // ข้อมูลเริ่มต้นสำหรับทดสอบระบบจัดซื้อจริง
+    sheet.appendRow(["PO-2026-001", "PR-2026-012", "P-001", "ลูกปืนตลับ SKF 6204-2Z", "2026-07-25", 20, 15, "2026-07-28", "ค้างส่ง", 120, 2400, "ซัพพลายเออร์ A"]);
+    sheet.appendRow(["PO-2026-002", "PR-2026-015", "P-002", "สายพานร่อง V-Belt B-45", "2026-07-25", 10, 0, "", "สั่งแล้ว", 80, 800, "ซัพพลายเออร์ B"]);
+    sheet.appendRow(["PO-2026-003", "PR-2026-018", "P-003", "ฟิวส์คอนโทรล 2A 250V", "2026-07-24", 50, 50, "2026-07-29", "ได้รับครบ", 5, 250, "ซัพพลายเออร์ A"]);
+    sheet.appendRow(["PO-2026-004", "PR-2026-020", "P-004", "ซีลยางโอริง NBR 70", "2026-07-24", 100, 40, "2026-07-27", "ค้างส่ง", 15, 1500, "ซัพพลายเออร์ C"]);
+    sheet.appendRow(["PO-2026-005", "PR-2026-022", "P-005", "โซ่ส่งกำลัง เบอร์ 50", "2026-07-23", 5, 0, "", "รออนุมัติ", 450, 2250, "ซัพพลายเออร์ B"]);
+    sheet.appendRow(["PO-2026-006", "PR-2026-024", "P-006", "วาล์วลม Solenoid 220VAC", "2026-07-22", 12, 12, "2026-07-26", "ได้รับครบ", 650, 7800, "ซัพพลายเออร์ D"]);
+    sheet.appendRow(["PO-2026-007", "PR-2026-025", "P-007", "สวิตช์ปุ่มกด Emergency Stop", "2026-07-21", 8, 0, "", "เตรียมสั่ง", 180, 1440, "ซัพพลายเออร์ C"]);
+  } else {
+    const lastCol = poSheet.getLastColumn();
+    if (lastCol < 10) poSheet.getRange(1, 10).setValue("Unit_Cost");
+    if (lastCol < 11) poSheet.getRange(1, 11).setValue("Total_Cost");
+    if (lastCol < 12) poSheet.getRange(1, 12).setValue("Supplier");
+    poSheet.getRange("1:1").setFontWeight("bold");
+  }
+}
+
+// ฟังก์ชันดึงข้อมูลทั้งหมดส่งไปให้ Frontend ในรูปแบบ JSON (ดึงจาก Cache JSON เพื่อประสิทธิภาพความเร็วสูงสุด)
+function getAppData() {
+  const products = getFirebaseData("appData/products") || [];
+  const machines = getFirebaseData("appData/machines") || [];
+  const mappings = getFirebaseData("mappings") || [];
+  const settings = getFirebaseData("appData/settings") || { isShowPriceBForGuest: false, isShowPriceCForGuest: false };
+  const manuals = getFirebaseData("appData/manuals") || [];
+  const lots = getLotsFromJson();
+  const purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+  
+  return {
+    products: products,
+    machines: machines,
+    mappings: mappings,
+    settings: settings,
+    manuals: manuals,
+    lots: lots,
+    purchaseOrders: purchaseOrders
+  };
+}
+
+// ฟังก์ชันอ่านข้อมูลจาก Google Sheets และ JSON แยกต่างๆ แล้วนำมารวมกันเป็นก้อนเดียว เซฟลง Drive และคืนค่า
+function rebuildAndSaveAppDataJson(throwError = false) {
+  initDatabase();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  // ดึงข้อมูล Products
+  const prodSheet = ss.getSheetByName("Products");
+  const prodData = prodSheet.getDataRange().getValues();
+  const products = [];
+  if (prodData.length > 1) {
+    for (let i = 1; i < prodData.length; i++) {
+      let r = prodData[i];
+      products.push({
+        id: r[0], name: r[1], unit: r[2], cost: r[3],
+        price_a: r[4], price_b: r[5], price_c: r[6],
+        category: r[7], note: r[8], image_url: r[9],
+        stock_qty: (r[10] !== undefined && r[10] !== "") ? parseFloat(r[10]) : 0,
+        group: r[11] || "",
+        supplier: r[12] || "",
+        storage: r[13] || ""
+      });
+    }
+  }
+
+  // ดึงข้อมูล Machines
+  const machSheet = ss.getSheetByName("Machines");
+  const machData = machSheet.getDataRange().getValues();
+  const machines = [];
+  if (machData.length > 1) {
+    for (let i = 1; i < machData.length; i++) {
+      machines.push({ 
+        id: machData[i][0], 
+        name: machData[i][1], 
+        image_url: machData[i][2] || '',
+        cost: machData[i][3] || 0,
+        price_a: machData[i][4] || 0,
+        price_b: machData[i][5] || 0,
+        price_c: machData[i][6] || 0,
+        note: machData[i][7] || '',
+        group: machData[i][8] || '',
+        supplier: machData[i][9] || '',
+        storage: machData[i][10] || ''
+      });
+    }
+  }
+
+  // ดึงข้อมูล Mapping จาก JSON ใน Google Drive
+  let mappings = getMappingsFromJson();
+  const machineIds = new Set(machines.map(m => String(m.id).trim()));
+  const productIds = new Set(products.map(p => String(p.id).trim()));
+  const initialMappingsLength = mappings.length;
+
+  mappings = mappings.filter(m => {
+    return machineIds.has(String(m.machine_id).trim()) && 
+           productIds.has(String(m.product_id).trim());
+  });
+  if (mappings.length < initialMappingsLength) {
+    try {
+      saveMappingsToJson(mappings);
+    } catch (e) {
+      Logger.log("ไม่สามารถเซฟข้อมูลการจับคู่ที่กรองใหม่ได้: " + e.toString());
+    }
+  }
+
+  // ดึงข้อมูล Settings
+  const settingsSheet = ss.getSheetByName("Settings");
+  const settings = { isShowPriceBForGuest: false, isShowPriceCForGuest: false };
+  if (settingsSheet) {
+    const settingsData = settingsSheet.getDataRange().getValues();
+    if (settingsData.length > 1) {
+      for (let i = 1; i < settingsData.length; i++) {
+        let key = settingsData[i][0];
+        let val = settingsData[i][1];
+        if (key === "isShowPriceBForGuest") settings.isShowPriceBForGuest = (String(val).toLowerCase() === "true");
+        if (key === "isShowPriceCForGuest") settings.isShowPriceCForGuest = (String(val).toLowerCase() === "true");
+      }
+    }
+  }
+
+  // ดึงข้อมูล Manuals
+  const manSheet = ss.getSheetByName("Manuals");
+  const manuals = [];
+  if (manSheet) {
+    const manData = manSheet.getDataRange().getValues();
+    if (manData.length > 1) {
+      for (let i = 1; i < manData.length; i++) {
+        manuals.push({
+          id: manData[i][0],
+          title: manData[i][1],
+          description: manData[i][2] || '',
+          file_url: manData[i][3] || '',
+          file_type: manData[i][4] || '',
+          uploaded_at: manData[i][5] || ''
+        });
+      }
+    }
+  }
+
+  // ดึงข้อมูล PurchaseOrders
+  const poSheet = ss.getSheetByName("PurchaseOrders");
+  const purchaseOrders = [];
+  if (poSheet) {
+    const poData = poSheet.getDataRange().getValues();
+    if (poData.length > 1) {
+      const timeZone = ss.getSpreadsheetTimeZone();
+      for (let i = 1; i < poData.length; i++) {
+        let orderDateStr = "";
+        if (poData[i][4]) {
+          orderDateStr = (poData[i][4] instanceof Date) ? Utilities.formatDate(poData[i][4], timeZone, "yyyy-MM-dd") : String(poData[i][4]);
+        }
+        let lastReceivedDateStr = "";
+        if (poData[i][7]) {
+          lastReceivedDateStr = (poData[i][7] instanceof Date) ? Utilities.formatDate(poData[i][7], timeZone, "yyyy-MM-dd") : String(poData[i][7]);
+        }
+        let unitCost = 0;
+        if (poData[i].length > 9 && poData[i][9] !== "") {
+          unitCost = parseFloat(poData[i][9]) || 0;
+        }
+        let totalCost = 0;
+        if (poData[i].length > 10 && poData[i][10] !== "") {
+          totalCost = parseFloat(poData[i][10]) || 0;
+        }
+        let rowSupplier = "";
+        if (poData[i].length > 11 && poData[i][11] !== "") {
+          rowSupplier = String(poData[i][11]).trim();
+        }
+
+        purchaseOrders.push({
+          poNumber: poData[i][0],
+          prNumber: poData[i][1],
+          productId: poData[i][2],
+          productName: poData[i][3],
+          orderDate: orderDateStr,
+          orderedQty: parseFloat(poData[i][5] || 0),
+          receivedQty: parseFloat(poData[i][6] || 0),
+          lastReceivedDate: lastReceivedDateStr,
+          status: poData[i][8] || '',
+          unitCost: unitCost,
+          totalCost: totalCost,
+          supplier: rowSupplier
+        });
+      }
+    }
+  }
+
+  const appData = {
+    products: products,
+    machines: machines,
+    mappings: mappings,
+    settings: settings,
+    manuals: manuals,
+    lots: getLotsFromJson(),
+    purchaseOrders: purchaseOrders
+  };
+
   try {
-    var subFolders = rootFolder.getFoldersByName(name);
-    while (subFolders.hasNext()) {
-      var folder = subFolders.next();
-      folder.setTrashed(true);
+    const folder = DriveApp.getFolderById(JSON_FOLDER_ID);
+    const files = folder.getFilesByName("app_data.json");
+    const content = JSON.stringify(appData);
+    if (files.hasNext()) {
+      const file = files.next();
+      file.setContent(content);
+    } else {
+      folder.createFile("app_data.json", content, MimeType.PLAIN_TEXT);
     }
   } catch (e) {
-    Logger.log("Could not delete folder " + name + ": " + e.message);
+    Logger.log("rebuildAndSaveAppDataJson error: " + e.toString());
+  }
+
+  // ซิงค์ข้อมูลไปยัง Firebase
+  try {
+    syncToFirebase(appData);
+  } catch (e) {
+    Logger.log("Firebase Sync error: " + e.toString());
+    if (throwError) {
+      throw new Error("Firebase Sync failed: " + e.message);
+    }
+  }
+
+  return appData;
+}
+
+// ฟังก์ชันซิงค์ข้อมูลไปยัง Firebase Realtime Database
+function syncToFirebase(appData) {
+  if (!FIREBASE_URL || FIREBASE_URL === "") {
+    Logger.log("Firebase URL is not configured.");
+    return;
+  }
+  
+  let baseUrl = FIREBASE_URL;
+  if (baseUrl.charAt(baseUrl.length - 1) !== '/') {
+    baseUrl += '/';
+  }
+  
+  const url = baseUrl + "appData.json" + (FIREBASE_SECRET ? "?auth=" + FIREBASE_SECRET : "");
+  
+  const options = {
+    method: "put",
+    contentType: "application/json",
+    payload: JSON.stringify(appData),
+    muteHttpExceptions: true
+  };
+  
+  const response = UrlFetchApp.fetch(url, options);
+  const responseCode = response.getResponseCode();
+  if (responseCode !== 200) {
+    throw new Error("Failed to sync to Firebase: HTTP " + responseCode + " - " + response.getContentText());
   }
 }
 
-// ฟังก์ชันดึง File ID จาก URL ของรูปภาพหรือ PDF ใน Google Drive
-function extractFileIdFromUrl(url) {
-  if (!url) return null;
-  // รูปแบบ lh3.googleusercontent.com/d/{fileId}
-  var lh3Match = url.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/);
-  if (lh3Match) return lh3Match[1];
-  // รูปแบบ drive.google.com/file/d/{fileId}/view
-  var driveMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if (driveMatch) return driveMatch[1];
+// ฟังก์ชันดึงข้อมูลจาก Firebase Realtime Database
+function getFirebaseData(path) {
+  if (!FIREBASE_URL || FIREBASE_URL === "") {
+    throw new Error("FIREBASE_URL is not configured.");
+  }
+  let baseUrl = FIREBASE_URL;
+  if (baseUrl.charAt(baseUrl.length - 1) !== '/') {
+    baseUrl += '/';
+  }
+  const url = baseUrl + path + ".json" + (FIREBASE_SECRET ? "?auth=" + FIREBASE_SECRET : "");
+  const response = UrlFetchApp.fetch(url, { method: "get", muteHttpExceptions: true });
+  if (response.getResponseCode() === 200) {
+    return JSON.parse(response.getContentText());
+  }
   return null;
 }
 
-// ฟังก์ชันลบไฟล์ใน Drive จาก array ของ URL
-function deleteFilesFromUrls(imageUrls) {
-  if (!imageUrls || imageUrls.length === 0) return;
-  imageUrls.forEach(function(url) {
-    var trimmed = url.trim();
-    var fileId = extractFileIdFromUrl(trimmed);
-    if (fileId) {
-      try {
-        DriveApp.getFileById(fileId).setTrashed(true);
-      } catch (e) {
-        // ไฟล์อาจถูกลบไปแล้ว หรือไม่มีสิทธิ์ ไม่ต้อง throw
-        Logger.log("Could not delete file " + fileId + ": " + e.message);
-      }
-    }
-  });
+// ฟังก์ชันบันทึกข้อมูลไปยัง Firebase Realtime Database
+function setFirebaseData(path, data) {
+  if (!FIREBASE_URL || FIREBASE_URL === "") {
+    throw new Error("FIREBASE_URL is not configured.");
+  }
+  let baseUrl = FIREBASE_URL;
+  if (baseUrl.charAt(baseUrl.length - 1) !== '/') {
+    baseUrl += '/';
+  }
+  const url = baseUrl + path + ".json" + (FIREBASE_SECRET ? "?auth=" + FIREBASE_SECRET : "");
+  const options = {
+    method: "put",
+    contentType: "application/json",
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  };
+  const response = UrlFetchApp.fetch(url, options);
+  if (response.getResponseCode() !== 200) {
+    throw new Error("Failed to write to Firebase: " + response.getContentText());
+  }
 }
 
-// ฟังก์ชันรวบรวม imageUrls ทั้งหมดจากประวัติถัง
-function collectImageUrlsFromTank(tankData) {
-  var urls = [];
-  if (!tankData || !tankData.history) return urls;
-  tankData.history.forEach(function(h) {
-    if (h.imageUrl) {
-      // imageUrl อาจมีหลาย URL คั่นด้วย comma
-      h.imageUrl.split(',').forEach(function(u) {
-        var trimmed = u.trim();
-        if (trimmed) urls.push(trimmed);
-      });
-    }
-  });
-  return urls;
+// ฟังก์ชันอัปเดตข้อมูลแบบหลายตำแหน่งพร้อมกันไปยัง Firebase (PATCH)
+function patchFirebaseData(path, data) {
+  if (!FIREBASE_URL || FIREBASE_URL === "") {
+    throw new Error("FIREBASE_URL is not configured.");
+  }
+  let baseUrl = FIREBASE_URL;
+  if (baseUrl.charAt(baseUrl.length - 1) !== '/') {
+    baseUrl += '/';
+  }
+  const url = baseUrl + path + ".json" + (FIREBASE_SECRET ? "?auth=" + FIREBASE_SECRET : "");
+  const options = {
+    method: "patch",
+    contentType: "application/json",
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  };
+  const response = UrlFetchApp.fetch(url, options);
+  if (response.getResponseCode() !== 200) {
+    throw new Error("Failed to patch Firebase: " + response.getContentText());
+  }
 }
 
-// ฟังก์ชันดึงข้อมูลทั้งหมด (GET)
-function doGet(e) {
-  var data = getDatabaseFile();
-  return ContentService.createTextOutput(JSON.stringify(data))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-// ฟังก์ชันบันทึกข้อมูล (POST)
-function doPost(e) {
-  var lock = LockService.getScriptLock();
+// ฟังก์ชันอัปโหลดภาพและสร้างลิงก์ lh3 (รองรับการเก็บในโฟลเดอร์ย่อยเพื่อความเป็นระเบียบ)
+function uploadImageAndGetLh3Url(base64Data, fileName, subfolderName) {
   try {
-    lock.waitLock(10000); // ล็อกระบบป้องกันการเขียนข้อมูลพร้อมกัน (รอสูงสุด 10 วินาที)
+    if (!base64Data) return "";
+    const base64 = base64Data.split(',')[1] || base64Data;
+    const decoded = Utilities.base64Decode(base64);
+    const blob = Utilities.newBlob(decoded, "image/jpeg", fileName); 
     
-    var requestData = JSON.parse(e.postData.contents);
-    var action = requestData.action;
-    var payload = requestData.payload;
-    
-    var dbData = getDatabaseFile();
-    
-    if (action === "save_tanks") {
-      dbData.tanks = dbData.tanks || {};
-      for (var id in payload) {
-        dbData.tanks[id] = payload[id];
-      }
-      dbData.lastUpdated = Date.now();
-    } 
-    else if (action === "delete_tank") {
-      // ลบเฉพาะ JSON record (ไม่ลบไฟล์ใน Drive)
-      var tankId = payload.tankId;
-      if (dbData.tanks[tankId]) {
-        delete dbData.tanks[tankId];
-      }
-      dbData.lastUpdated = Date.now();
-    }
-    else if (action === "delete_tank_with_files") {
-      // ลบไฟล์และโฟลเดอร์ใน Drive ทั้งหมดของถัง แล้วลบ JSON record
-      var tankId = payload.tankId;
-      if (dbData.tanks[tankId]) {
-        var imageUrls = collectImageUrlsFromTank(dbData.tanks[tankId]);
-        deleteFilesFromUrls(imageUrls);
-        var rootFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
-        deleteTankFolder(rootFolder, tankId);
-        delete dbData.tanks[tankId];
-      }
-      dbData.lastUpdated = Date.now();
-    }
-    else if (action === "delete_all_with_files") {
-      // ลบไฟล์และโฟลเดอร์ใน Drive ของทุกถัง แล้วล้าง tanks ทั้งหมด
-      var tankIds = Object.keys(dbData.tanks || {});
-      var rootFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
-      tankIds.forEach(function(id) {
-        if (dbData.tanks[id]) {
-          var imageUrls = collectImageUrlsFromTank(dbData.tanks[id]);
-          deleteFilesFromUrls(imageUrls);
-          deleteTankFolder(rootFolder, id);
-          delete dbData.tanks[id];
+    let folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    if (subfolderName) {
+      const subfolders = folder.getFoldersByName(subfolderName);
+      if (subfolders.hasNext()) {
+        folder = subfolders.next();
+        // ลบไฟล์เก่าออกก่อนอัปโหลดใหม่
+        const oldFiles = folder.getFiles();
+        while (oldFiles.hasNext()) {
+          oldFiles.next().setTrashed(true);
         }
-      });
-      dbData.lastUpdated = Date.now();
+      } else {
+        folder = folder.createFolder(subfolderName);
+      }
     }
-    else if (action === "save_settings") {
-      dbData.settings = payload;
-      dbData.lastUpdated = Date.now();
-    }
-    else if (action === "delete_all_history") {
-      var allTankIds = Object.keys(dbData.tanks || {});
-      allTankIds.forEach(function(id) {
-        if (dbData.tanks[id]) {
-          // ลบไฟล์ใน Drive ก่อนล้าง history
-          var imageUrls = collectImageUrlsFromTank(dbData.tanks[id]);
-          deleteFilesFromUrls(imageUrls);
-          dbData.tanks[id].history = [];
-        }
-      });
-      dbData.lastUpdated = Date.now();
-    }
-    else if (action === "upload_image") {
-      var folderName = payload.folderName || payload.tankId;
-      var imageUrl = uploadImageAndGetLh3Url(payload.base64Data, payload.fileName, folderName);
-      return ContentService.createTextOutput(JSON.stringify({ status: "success", imageUrl: imageUrl }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return 'https://lh3.googleusercontent.com/d/' + file.getId();
+  } catch (e) {
+    throw new Error("อัปโหลดรูปภาพล้มเหลว: " + e.message);
+  }
+}
 
-    saveDatabaseFile(dbData);
+// ฟังก์ชันคำนวณราคา 3 ระดับตามเงื่อนไข (ใช้กับอะไหล่)
+function calculatePrices(cost) {
+  const costNum = parseFloat(cost) || 0;
+  return {
+    price_a: costNum * 2.1,
+    price_b: costNum * 1.7,
+    price_c: costNum * 1.3
+  };
+}
+
+// 1. เพิ่มข้อมูล Product
+function addProduct(data) {
+  let imageUrl = "";
+  if (data.imageBase64) {
+    const fileName = "IMG_" + data.id + "_" + new Date().getTime() + ".jpg";
+    imageUrl = uploadImageAndGetLh3Url(data.imageBase64, fileName, data.id);
+  }
+
+  const autoPrices = calculatePrices(data.cost);
+  const pA = parseFloat(data.price_a) > 0 ? parseFloat(data.price_a) : autoPrices.price_a;
+  const pB = parseFloat(data.price_b) > 0 ? parseFloat(data.price_b) : autoPrices.price_b;
+  const pC = parseFloat(data.price_c) > 0 ? parseFloat(data.price_c) : autoPrices.price_c;
+  
+  let products = getFirebaseData("appData/products") || [];
+  products.push({
+    id: data.id, name: data.name, unit: data.unit, cost: parseFloat(data.cost) || 0,
+    price_a: pA, price_b: pB, price_c: pC,
+    category: data.category, note: data.note, image_url: imageUrl,
+    stock_qty: (data.stock_qty !== undefined && data.stock_qty !== "") ? parseFloat(data.stock_qty) : 0,
+    group: data.group || "", supplier: data.supplier || "", storage: data.storage || ""
+  });
+  setFirebaseData("appData/products", products);
+  return { image_url: imageUrl };
+}
+
+// 2. แก้ไขข้อมูล Product
+function editProduct(data) {
+  let products = getFirebaseData("appData/products") || [];
+  const index = products.findIndex(p => String(p.id).trim() === String(data.id).trim());
+  if (index === -1) {
+    throw new Error("ไม่พบรหัสสินค้าที่ต้องการแก้ไข");
+  }
+  
+  let imageUrl = products[index].image_url;
+  if (data.imageBase64) {
+    const fileName = "IMG_" + data.id + "_" + new Date().getTime() + ".jpg";
+    imageUrl = uploadImageAndGetLh3Url(data.imageBase64, fileName, data.id);
+  }
+
+  const autoPrices = calculatePrices(data.cost);
+  const pA = parseFloat(data.price_a) > 0 ? parseFloat(data.price_a) : autoPrices.price_a;
+  const pB = parseFloat(data.price_b) > 0 ? parseFloat(data.price_b) : autoPrices.price_b;
+  const pC = parseFloat(data.price_c) > 0 ? parseFloat(data.price_c) : autoPrices.price_c;
+
+  let stockQty = (data.stock_qty !== undefined && data.stock_qty !== "") ? parseFloat(data.stock_qty) : parseFloat(products[index].stock_qty || 0);
+
+  products[index] = {
+    id: data.id, name: data.name, unit: data.unit, cost: parseFloat(data.cost) || 0,
+    price_a: pA, price_b: pB, price_c: pC,
+    category: data.category, note: data.note, image_url: imageUrl,
+    stock_qty: stockQty,
+    group: data.group || "", supplier: data.supplier || "", storage: data.storage || ""
+  };
+  
+  setFirebaseData("appData/products", products);
+}
+
+// 3. ลบข้อมูล Product
+function deleteProduct(productId) {
+  const pid = String(productId).trim();
+  let products = getFirebaseData("appData/products") || [];
+  const newProducts = products.filter(p => String(p.id).trim() !== pid);
+  setFirebaseData("appData/products", newProducts);
+  
+  let mappings = getMappingsFromJson();
+  let newMappings = mappings.filter(m => String(m.product_id).trim() !== pid);
+  if (newMappings.length !== mappings.length) {
+    saveMappingsToJson(newMappings);
+  }
+
+  // ลบไฟล์รูปภาพและโฟลเดอร์รูปภาพของสินค้าออกจาก Google Drive
+  try {
+    const parentFolder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    const subfolders = parentFolder.getFoldersByName(pid);
+    while (subfolders.hasNext()) {
+      const subfolder = subfolders.next();
+      const files = subfolder.getFiles();
+      while (files.hasNext()) {
+        files.next().setTrashed(true);
+      }
+      subfolder.setTrashed(true);
+    }
+  } catch (e) {
+    Logger.log("ไม่สามารถลบโฟลเดอร์รูปภาพของสินค้า " + pid + " ได้: " + e.toString());
+  }
+}
+
+// 4. เพิ่มข้อมูล Machine
+function addMachine(data) {
+  let imageUrl = '';
+  if (data.imageBase64) {
+    const fileName = 'MC_' + data.id + '_' + new Date().getTime() + '.jpg';
+    imageUrl = uploadImageAndGetLh3Url(data.imageBase64, fileName);
+  }
+  let machines = getFirebaseData("appData/machines") || [];
+  machines.push({
+    id: data.id, name: data.name, image_url: imageUrl, cost: parseFloat(data.cost) || 0,
+    price_a: parseFloat(data.price_a) || 0, price_b: parseFloat(data.price_b) || 0, price_c: parseFloat(data.price_c) || 0,
+    note: data.note || '', group: data.group || "", supplier: data.supplier || "", storage: data.storage || ""
+  });
+  setFirebaseData("appData/machines", machines);
+}
+
+// 5. แก้ไขข้อมูล Machine
+function editMachine(data) {
+  let machines = getFirebaseData("appData/machines") || [];
+  const index = machines.findIndex(m => String(m.id).trim() === String(data.id).trim());
+  if (index === -1) throw new Error("ไม่พบเครื่องจักรที่ต้องการแก้ไข");
+  
+  let imageUrl = machines[index].image_url;
+  if (data.imageBase64) {
+    const fileName = 'MC_' + data.id + '_' + new Date().getTime() + '.jpg';
+    imageUrl = uploadImageAndGetLh3Url(data.imageBase64, fileName);
+  }
+  machines[index] = {
+    id: data.id, name: data.name, image_url: imageUrl, cost: parseFloat(data.cost) || 0,
+    price_a: parseFloat(data.price_a) || 0, price_b: parseFloat(data.price_b) || 0, price_c: parseFloat(data.price_c) || 0,
+    note: data.note || '', group: data.group || "", supplier: data.supplier || "", storage: data.storage || ""
+  };
+  setFirebaseData("appData/machines", machines);
+}
+
+// 6. ลบข้อมูล Machine
+function deleteMachine(machineId) {
+  const mid = String(machineId).trim();
+  let machines = getFirebaseData("appData/machines") || [];
+  machines = machines.filter(m => String(m.id).trim() !== mid);
+  setFirebaseData("appData/machines", machines);
+  
+  let mappings = getMappingsFromJson();
+  let newMappings = mappings.filter(m => String(m.machine_id).trim() !== mid);
+  if (newMappings.length !== mappings.length) {
+    saveMappingsToJson(newMappings);
+  }
+}
+
+// 7. เพิ่ม Mapping
+function addMapping(data) {
+  let productIds = Array.isArray(data.product_ids) ? data.product_ids : [data.product_id];
+  let machineId = String(data.machine_id);
+  
+  let mappings = getMappingsFromJson();
+  let isModified = false;
+  for (let p = 0; p < productIds.length; p++) {
+    let pid = String(productIds[p]);
+    if(!pid) continue;
+    let isDuplicate = mappings.some(m => String(m.product_id) === pid && String(m.machine_id) === machineId);
+    if (!isDuplicate) {
+      mappings.push({ product_id: pid, machine_id: machineId });
+      isModified = true;
+    }
+  }
+  
+  if (isModified) {
+    saveMappingsToJson(mappings);
+  } else {
+    throw new Error("รายการอะไหล่ที่เลือก ถูกจับคู่กับเครื่องจักรนี้อยู่แล้วทั้งหมด");
+  }
+}
+
+// 8. ลบ Mapping
+function deleteMapping(data) {
+  let pid = String(data.product_id);
+  let mid = String(data.machine_id);
+  
+  let mappings = getMappingsFromJson();
+  let initialLength = mappings.length;
+  mappings = mappings.filter(m => !(String(m.product_id) === pid && String(m.machine_id) === mid));
+  if (mappings.length < initialLength) {
+    saveMappingsToJson(mappings);
+  } else {
+    throw new Error("ไม่พบรายการจับคู่ที่ต้องการลบ");
+  }
+}
+
+// ดึงข้อมูล Mapping จาก JSON
+function getMappingsFromJson() {
+  const data = getFirebaseData("mappings");
+  return Array.isArray(data) ? data : [];
+}
+
+// บันทึกข้อมูล Mapping ลง JSON
+function saveMappingsToJson(mappings) {
+  setFirebaseData("mappings", mappings);
+}
+
+// บันทึกการตั้งค่าลง Google Sheets
+function saveSettings(settings) {
+  setFirebaseData("appData/settings", {
+    isShowPriceBForGuest: settings.isShowPriceBForGuest === true,
+    isShowPriceCForGuest: settings.isShowPriceCForGuest === true
+  });
+}
+
+// ==========================================
+// 8.1 ระบบจัดการ Lots (FIFO Inventory)
+// ==========================================
+
+function getLotsFromJson() {
+  const data = getFirebaseData("lots");
+  return Array.isArray(data) ? data : [];
+}
+
+function saveLotsToJson(lots) {
+  setFirebaseData("lots", lots);
+}
+
+function initLotsFromJson() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const prodSheet = ss.getSheetByName("Products");
+  const lots = [];
+  if (prodSheet) {
+    const prodValues = prodSheet.getDataRange().getValues();
+    const now = new Date();
+    const dateStr = Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
     
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", lastUpdated: dbData.lastUpdated }))
-      .setMimeType(ContentService.MimeType.JSON);
+    if (prodValues.length > 1) {
+      for (let i = 1; i < prodValues.length; i++) {
+        const r = prodValues[i];
+        const pid = String(r[0]).trim();
+        const cost = parseFloat(r[3]) || 0;
+        const price_a = parseFloat(r[4]) || 0;
+        const price_b = parseFloat(r[5]) || 0;
+        const price_c = parseFloat(r[6]) || 0;
+        const stock_qty = (r[10] !== undefined && r[10] !== "") ? parseFloat(r[10]) : 0;
+        
+        if (stock_qty > 0) {
+          lots.push({
+            lot_id: "LOT-INIT-" + pid,
+            product_id: pid,
+            cost: cost,
+            price_a: price_a,
+            price_b: price_b,
+            price_c: price_c,
+            initial_qty: stock_qty,
+            remaining_qty: stock_qty,
+            created_at: dateStr,
+            note: "Lot ตั้งต้นระบบ"
+          });
+        }
+      }
+    }
+  }
+  saveLotsToJson(lots);
+  return lots;
+}
+
+// ==========================================
+// 9, 10, 11 ระบบเบิกจ่ายผ่าน JSON 
+// ==========================================
+
+function getTransactionsFromJson() {
+  const data = getFirebaseData("transactions");
+  return Array.isArray(data) ? data : [];
+}
+
+function saveTransactionsToJson(transactions) {
+  setFirebaseData("transactions", transactions);
+}
+
+function migrateTransactionsToJson() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const txSheet = ss.getSheetByName("Transactions");
+  const txdSheet = ss.getSheetByName("Transaction_Details");
+  
+  if (!txSheet || !txdSheet) return [];
+  
+  const txValues = txSheet.getDataRange().getValues();
+  const txdValues = txdSheet.getDataRange().getValues();
+  const detailsMap = {};
+  
+  if (txdValues.length > 1) {
+    for (let i = 1; i < txdValues.length; i++) {
+      const r = txdValues[i];
+      const txId = String(r[1]).trim();
+      if (!detailsMap[txId]) detailsMap[txId] = [];
+      detailsMap[txId].push({
+        detail_id: r[0], product_id: r[2], qty: r[3], price: r[4], subtotal: r[5]
+      });
+    }
+  }
+  
+  const transactions = [];
+  if (txValues.length > 1) {
+    for (let i = 1; i < txValues.length; i++) {
+      const r = txValues[i];
+      let dateVal = r[1];
+      if (dateVal instanceof Date) {
+        dateVal = Utilities.formatDate(dateVal, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+      }
+      transactions.push({
+        id: String(r[0]).trim(),
+        date: dateVal,
+        requester: r[2],
+        department: r[3],
+        machine_id: r[4],
+        total_price: r[5],
+        note: r[6],
+        status: r[7],
+        items: detailsMap[String(r[0]).trim()] || []
+      });
+    }
+  }
+  
+  saveTransactionsToJson(transactions);
+  return transactions;
+}
+
+// 9. บันทึกการทำรายการเบิกอะไหล่ (POS Checkout) พร้อมตัดสต็อกตาม FIFO
+function checkoutOrder(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    // ดึงข้อมูลทั้งหมดในครั้งเดียว (ประหยัด HTTP Request)
+    const db = getFirebaseData("") || {};
+    let products = db.appData?.products || [];
+    const cart = payload.cart; 
+    let lots = db.lots || [];
+    let transactions = db.transactions || [];
+    
+    const prodMap = {};
+    products.forEach(p => {
+      prodMap[p.id] = p;
+    });
+    
+    // ตรวจเช็คสต็อกคงเหลือ
+    for (let k = 0; k < cart.length; k++) {
+      const item = cart[k];
+      const prodId = String(item.id).trim();
+      const product = prodMap[prodId];
+      if (!product) throw new Error("ไม่พบอะไหล่รหัส " + prodId + " ในระบบ");
       
-  } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+      const stockQty = parseFloat(product.stock_qty) || 0;
+      if (stockQty < item.qty) {
+        throw new Error("สต็อกไม่เพียงพอ: อะไหล่ " + product.name + " (" + prodId + ") มีคงเหลือ " + stockQty + " ชิ้น แต่พยายามเบิก " + item.qty + " ชิ้น");
+      }
+      
+      const prodLots = lots.filter(l => String(l.product_id).trim() === prodId && l.remaining_qty > 0);
+      const totalLotQty = prodLots.reduce((sum, l) => sum + l.remaining_qty, 0);
+      if (totalLotQty < stockQty) {
+        const diff = stockQty - totalLotQty;
+        lots.push({
+          lot_id: "LOT-SUPP-" + prodId + "-" + Date.now(),
+          product_id: prodId,
+          cost: parseFloat(product.cost) || 0,
+          price_a: parseFloat(product.price_a) || 0,
+          price_b: parseFloat(product.price_b) || 0,
+          price_c: parseFloat(product.price_c) || 0,
+          initial_qty: diff,
+          remaining_qty: diff,
+          created_at: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+          note: "Lot สำรองคงเหลือ"
+        });
+      }
+    }
+    
+    // ตัดสต็อกตาม FIFO (First-In, First-Out)
+    const checkoutItems = [];
+    for (let k = 0; k < cart.length; k++) {
+      const item = cart[k];
+      const prodId = String(item.id).trim();
+      let neededQty = item.qty;
+      
+      const availableLots = lots.filter(l => String(l.product_id).trim() === prodId && l.remaining_qty > 0)
+                                .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+      
+      for (let l = 0; l < availableLots.length && neededQty > 0; l++) {
+        const currentLot = availableLots[l];
+        const takeQty = Math.min(neededQty, currentLot.remaining_qty);
+        
+        currentLot.remaining_qty -= takeQty;
+        neededQty -= takeQty;
+        
+        let lotPrice = item.price;
+        if (item.priceLevel === 'A' && currentLot.price_a) lotPrice = currentLot.price_a;
+        else if (item.priceLevel === 'B' && currentLot.price_b) lotPrice = currentLot.price_b;
+        else if (item.priceLevel === 'C' && currentLot.price_c) lotPrice = currentLot.price_c;
+        
+        checkoutItems.push({
+          detail_id: "",
+          product_id: prodId,
+          lot_id: currentLot.lot_id,
+          qty: takeQty,
+          unit_cost: currentLot.cost || 0,
+          price: lotPrice,
+          subtotal: takeQty * lotPrice
+        });
+      }
+      
+      const product = prodMap[prodId];
+      product.stock_qty = (parseFloat(product.stock_qty) || 0) - item.qty;
+    }
+    
+    const now = new Date();
+    const dateStr = Utilities.formatDate(now, "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss");
+    const datePrefix = Utilities.formatDate(now, "Asia/Bangkok", "yyyyMMdd");
+    
+    let counter = 1;
+    if (transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      if (String(lastTx.id).indexOf("LDT-" + datePrefix) === 0) {
+        const parts = String(lastTx.id).split("-");
+        const lastNum = parseInt(parts[2], 10);
+        if (!isNaN(lastNum)) counter = lastNum + 1;
+      }
+    }
+    const txId = "LDT-" + datePrefix + "-" + String(counter).padStart(4, '0');
+    
+    let calcTotalPrice = 0;
+    checkoutItems.forEach((it, idx) => {
+      it.detail_id = txId + "-" + (idx + 1);
+      calcTotalPrice += it.subtotal;
+    });
+    
+    const newTransaction = {
+      id: txId,
+      date: dateStr,
+      requester: payload.requester,
+      department: payload.department,
+      machine_id: payload.machine_id,
+      serial_number: payload.serial_number || "",
+      total_price: payload.total_price || calcTotalPrice,
+      note: payload.note || "",
+      status: "Success",
+      items: checkoutItems
+    };
+    
+    transactions.push(newTransaction);
+    
+    // อัปเดตข้อมูล Firebase ทั้งหมดในครั้งเดียวด้วย PATCH (ลดการเรียกจาก 3 ครั้งเหลือ 1 ครั้ง)
+    const updates = {
+      "appData/products": products,
+      "lots": lots,
+      "transactions": transactions
+    };
+    patchFirebaseData("", updates);
+    
+    return { transaction_id: txId, items: checkoutItems };
   } finally {
     lock.releaseLock();
   }
 }
 
-// ฟังก์ชันดึงไฟล์หรือสร้างใหม่หากไม่มี ในโฟลเดอร์ JSON
-function getDatabaseFile() {
-  var jsonFolder = DriveApp.getFolderById(JSON_FOLDER_ID);
-  var files = jsonFolder.getFilesByName(FILE_NAME);
-  if (files.hasNext()) {
-    var file = files.next();
-    var content = file.getBlob().getDataAsString();
-    return JSON.parse(content);
-  } else {
-    // ถ้ายังไม่มีใน JSON_FOLDER_ID ให้ลองค้นหาใน IMAGE_FOLDER_ID แล้วย้ายมาโดยอัตโนมัติ
-    try {
-      var imgFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
-      var oldFiles = imgFolder.getFilesByName(FILE_NAME);
-      if (oldFiles.hasNext()) {
-        var oldFile = oldFiles.next();
-        var content = oldFile.getBlob().getDataAsString();
-        oldFile.moveTo(jsonFolder); // ย้ายไฟล์มายังโฟลเดอร์ JSON ใหม่
-        Logger.log("ย้ายไฟล์ " + FILE_NAME + " ไปยังโฟลเดอร์ JSON เรียบร้อยแล้ว");
-        return JSON.parse(content);
+// 10. ดึงข้อมูลประวัติใบเบิกอะไหล่ทั้งหมด
+function getTransactions() {
+  let transactions = getTransactionsFromJson();
+  return transactions.reverse();
+}
+
+function cancelTransaction(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const txId = String(payload.transaction_id).trim();
+    let transactions = getTransactionsFromJson();
+    
+    const txIndex = transactions.findIndex(t => t.id === txId);
+    if (txIndex === -1) throw new Error("ไม่พบรหัสใบเบิก " + txId);
+    
+    const targetTx = transactions[txIndex];
+    if (targetTx.status === "Cancelled") throw new Error("ใบเบิกนี้ถูกยกเลิกไปแล้ว");
+    
+    let products = getFirebaseData("appData/products") || [];
+    let lots = getLotsFromJson();
+    
+    for (let k = 0; k < targetTx.items.length; k++) {
+      const item = targetTx.items[k];
+      const prodId = String(item.product_id).trim();
+      
+      const product = products.find(p => String(p.id).trim() === prodId);
+      if (product) {
+        product.stock_qty = (parseFloat(product.stock_qty) || 0) + item.qty;
       }
-    } catch (e) {
-      Logger.log("ไม่สามารถย้ายไฟล์เดิมได้: " + e.message);
+      
+      if (item.lot_id) {
+        const targetLot = lots.find(l => l.lot_id === item.lot_id);
+        if (targetLot) {
+          targetLot.remaining_qty += item.qty;
+        }
+      }
     }
+    
+    saveLotsToJson(lots);
+    setFirebaseData("appData/products", products);
+    
+    transactions[txIndex].status = "Cancelled";
+    saveTransactionsToJson(transactions);
+    
+    return { status: "success", message: "ยกเลิกใบเบิกสำเร็จ คืนสต็อกอะไหล่เข้าคลังเรียบร้อยแล้ว" };
+  } finally {
+    lock.releaseLock();
+  }
+}
 
-    var initialData = {
-      tanks: {},
-      settings: { ready: 30, stock: 45, customer: 7 },
-      lastUpdated: Date.now()
+// 11.1 ลบประวัติใบเบิกสินค้าออก
+function deleteTransaction(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const txId = String(payload.transaction_id).trim();
+    let transactions = getTransactionsFromJson();
+    
+    const txIndex = transactions.findIndex(t => t.id === txId);
+    if (txIndex === -1) throw new Error("ไม่พบรหัสใบเบิก " + txId);
+    
+    // ลบออกจากรายการ
+    transactions.splice(txIndex, 1);
+    saveTransactionsToJson(transactions);
+    
+    return { status: "success", message: "ลบประวัติใบเบิกสำเร็จเรียบร้อยแล้ว" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getUsersJSON() {
+  const data = getFirebaseData("users");
+  if (Array.isArray(data) && data.length > 0) {
+    return data;
+  }
+  return getDefaultUsersList();
+}
+
+function getDefaultUsersList() {
+  return [
+    {
+      fullName: "Admin Nakyeet",
+      department: "IT",
+      phone: "0999999999",
+      email: "nakyeet@gmail.com",
+      passwordHash: "15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225", // SHA-256 for "123456789"
+      role: "ADMIN"
+    }
+  ];
+}
+
+function saveUsersJSON(users) {
+  setFirebaseData("users", users);
+}
+
+function hashPassword(password) {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password, Utilities.Charset.UTF_8);
+  let hexString = "";
+  for (let i = 0; i < digest.length; i++) {
+    let byteVal = digest[i];
+    if (byteVal < 0) byteVal += 256;
+    let byteString = byteVal.toString(16);
+    if (byteString.length == 1) byteString = "0" + byteString;
+    hexString += byteString;
+  }
+  return hexString;
+}
+
+function registerUser(payload) {
+  const fullName = String(payload.fullName || "").trim();
+  const department = String(payload.department || "").trim();
+  const phone = String(payload.phone || "").trim();
+  const email = String(payload.email || "").trim().toLowerCase();
+  const password = String(payload.password || "");
+  const userType = payload.userType ? String(payload.userType).trim() : "";
+  if (!fullName || !department || !phone || !email || !password || !userType) {
+    throw new Error("กรุณากรอกข้อมูลและเลือกประเภทบุคคลให้ครบถ้วน");
+  }
+  
+  const users = getUsersJSON();
+  
+  const emailExists = users.some(u => String(u.email || "").toLowerCase() === email);
+  if (emailExists) {
+    throw new Error("อีเมลนี้ถูกใช้สมัครสมาชิกแล้ว");
+  }
+  
+  const phoneExists = users.some(u => String(u.phone || "").trim() === phone);
+  if (phoneExists) {
+    throw new Error("เบอร์โทรศัพท์นี้ถูกใช้สมัครสมาชิกแล้ว");
+  }
+  
+  const newUser = {
+    fullName: fullName,
+    department: department,
+    phone: phone,
+    email: email,
+    passwordHash: hashPassword(password),
+    role: "user",
+    priceLevel: "A",
+    userType: userType || "insource"
+  };
+  users.push(newUser);
+  saveUsersJSON(users);
+  
+  return {
+    fullName: newUser.fullName,
+    email: newUser.email,
+    role: newUser.role,
+    priceLevel: newUser.priceLevel,
+    userType: newUser.userType
+  };
+}
+
+function loginUser(payload) {
+  const username = String(payload.username).trim().toLowerCase();
+  const password = String(payload.password);
+  if (!username || !password) {
+    throw new Error("กรุณากรอกข้อมูลการเข้าสู่ระบบ");
+  }
+  
+  const users = getUsersJSON();
+  const hash = hashPassword(password);
+  
+  const user = users.find(u => 
+    (String(u.email).toLowerCase() === username || String(u.phone).trim() === username)
+  );
+  if (!user) {
+    throw new Error("ไม่พบชื่อผู้ใช้ (อีเมลหรือเบอร์โทรศัพท์) ในระบบ");
+  }
+  
+  if (user.passwordHash !== hash) {
+    throw new Error("รหัสผ่านไม่ถูกต้อง");
+  }
+  
+  return {
+    fullName: user.fullName,
+    department: user.department,
+    phone: user.phone,
+    email: user.email,
+    role: user.role,
+    priceLevel: user.priceLevel || "A",
+    userType: user.userType || "insource"
+  };
+}
+
+// ===== Extended Admin User Management APIs =====
+
+function getUsersList(payload) {
+  const requesterEmail = String(payload.requesterEmail).trim().toLowerCase();
+  const users = getUsersJSON();
+  const reqUser = users.find(u => String(u.email).toLowerCase() === requesterEmail);
+  if (!reqUser || (reqUser.role !== 'ADMIN' && reqUser.role !== 'Manager')) {
+    throw new Error("คุณไม่มีสิทธิ์เข้าถึงข้อมูลผู้ใช้งาน");
+  }
+  
+  return users.map(u => ({
+    fullName: u.fullName,
+    department: u.department,
+    phone: u.phone,
+    email: u.email,
+    role: u.role,
+    priceLevel: u.priceLevel || "A",
+    userType: u.userType || "insource"
+  }));
+}
+
+function updateUserByAdmin(payload) {
+  const requesterEmail = String(payload.requesterEmail).trim().toLowerCase();
+  const targetEmail = String(payload.targetEmail).trim().toLowerCase();
+  const newRole = String(payload.newRole).trim();
+  const newPriceLevel = String(payload.newPriceLevel).trim();
+  const newUserType = payload.newUserType ? String(payload.newUserType).trim() : "insource";
+  const users = getUsersJSON();
+  const reqUser = users.find(u => String(u.email).toLowerCase() === requesterEmail);
+  if (!reqUser || (reqUser.role !== 'ADMIN' && reqUser.role !== 'Manager')) {
+    throw new Error("คุณไม่มีสิทธิ์จัดการข้อมูลผู้ใช้งาน");
+  }
+  
+  const targetUser = users.find(u => String(u.email).toLowerCase() === targetEmail);
+  if (!targetUser) {
+    throw new Error("ไม่พบข้อมูลผู้ใช้งานที่ต้องการแก้ไข");
+  }
+  
+  if (targetUser.email === 'nakyeet@gmail.com' && newRole !== 'ADMIN') {
+    throw new Error("ไม่สามารถเปลี่ยนสิทธิ์ผู้ใช้ตั้งต้นระบบได้");
+  }
+  
+  targetUser.role = newRole;
+  targetUser.priceLevel = newPriceLevel;
+  targetUser.userType = newUserType;
+  
+  saveUsersJSON(users);
+  return { status: "success" };
+}
+
+function deleteUserByAdmin(payload) {
+  const requesterEmail = String(payload.requesterEmail).trim().toLowerCase();
+  const targetEmail = String(payload.targetEmail).trim().toLowerCase();
+  
+  const users = getUsersJSON();
+  const reqUser = users.find(u => String(u.email).toLowerCase() === requesterEmail);
+  if (!reqUser || (reqUser.role !== 'ADMIN' && reqUser.role !== 'Manager')) {
+    throw new Error("คุณไม่มีสิทธิ์จัดการข้อมูลผู้ใช้งาน");
+  }
+  
+  if (targetEmail === 'nakyeet@gmail.com') {
+    throw new Error("ไม่สามารถลบผู้ใช้งานตั้งต้นระบบได้");
+  }
+  
+  if (targetEmail === reqUser.email) {
+    throw new Error("ไม่สามารถลบตัวเองได้");
+  }
+  
+  const index = users.findIndex(u => String(u.email).toLowerCase() === targetEmail);
+  if (index === -1) {
+    throw new Error("ไม่พบข้อมูลผู้ใช้งานที่ต้องการลบ");
+  }
+  
+  users.splice(index, 1);
+  saveUsersJSON(users);
+  return { status: "success" };
+}
+
+function updateSelfProfile(payload) {
+  const currentEmail = String(payload.currentEmail).trim().toLowerCase();
+  const fullName = String(payload.fullName).trim();
+  const department = String(payload.department).trim();
+  const phone = String(payload.phone).trim();
+  const email = String(payload.email).trim().toLowerCase();
+  const password = String(payload.password);
+  
+  const users = getUsersJSON();
+  const user = users.find(u => String(u.email).toLowerCase() === currentEmail);
+  if (!user) {
+    throw new Error("ไม่พบข้อมูลบัญชีผู้ใช้งานของคุณ");
+  }
+  
+  if (email !== currentEmail) {
+    const emailConflict = users.some(u => String(u.email).toLowerCase() === email);
+    if (emailConflict) {
+       throw new Error("อีเมลนี้ถูกใช้สมัครสมาชิกแล้ว");
+    }
+    if (currentEmail === 'nakyeet@gmail.com') {
+       throw new Error("ไม่สามารถเปลี่ยนอีเมลผู้ใช้ตั้งต้นระบบได้");
+    }
+  }
+  
+  if (phone !== user.phone) {
+    const phoneConflict = users.some(u => String(u.phone).trim() === phone);
+    if (phoneConflict) {
+       throw new Error("เบอร์โทรศัพท์นี้ถูกใช้สมัครสมาชิกแล้ว");
+    }
+  }
+  
+  user.fullName = fullName;
+  user.department = department;
+  user.phone = phone;
+  user.email = email;
+  if (password) {
+    user.passwordHash = hashPassword(password);
+  }
+  
+  saveUsersJSON(users);
+  return {
+    fullName: user.fullName,
+    department: user.department,
+    phone: user.phone,
+    email: user.email,
+    role: user.role,
+    priceLevel: user.priceLevel || "A",
+    userType: user.userType || "insource"  // แก้บัค: ต้องส่ง userType กลับมาด้วยเพื่อแสดงป้ายประเภทผู้ใช้ถูกต้องหลังแก้ไขโปรไฟล์
+  };
+}
+
+// 12. บันทึกการเพิ่มสต็อกสินค้า (Restock) พร้อมอัปเดตสต็อกในชีต Products และสร้าง Lot ใหม่ลง JSON
+function restockProduct(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    // ดึงข้อมูลทั้งหมดในครั้งเดียว
+    const db = getFirebaseData("") || {};
+    let products = db.appData?.products || [];
+    let lots = db.lots || [];
+    let transactions = db.transactions || [];
+    
+    const product = products.find(p => String(p.id).trim() === String(payload.id).trim());
+    if (!product) throw new Error("ไม่พบอะไหล่รหัส " + payload.id + " ในระบบ");
+    
+    const qty = parseFloat(payload.qty) || 0;
+    const cost = (payload.cost !== undefined && payload.cost !== "") ? parseFloat(payload.cost) : product.cost;
+    const pA = (payload.price_a !== undefined && payload.price_a !== "") ? parseFloat(payload.price_a) : product.price_a;
+    const pB = (payload.price_b !== undefined && payload.price_b !== "") ? parseFloat(payload.price_b) : product.price_b;
+    const pC = (payload.price_c !== undefined && payload.price_c !== "") ? parseFloat(payload.price_c) : product.price_c;
+    
+    const lotId = "LOT-" + payload.id + "-" + Date.now();
+    lots.push({
+      lot_id: lotId,
+      product_id: payload.id,
+      cost: cost,
+      price_a: pA,
+      price_b: pB,
+      price_c: pC,
+      initial_qty: qty,
+      remaining_qty: qty,
+      created_at: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+      note: payload.note || "เติมสต็อกสินค้า"
+    });
+    
+    product.stock_qty = (parseFloat(product.stock_qty) || 0) + qty;
+    product.cost = cost;
+    product.price_a = pA;
+    product.price_b = pB;
+    product.price_c = pC;
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+    
+    const newRestockTransaction = {
+      id: nextTxId,
+      requester: payload.requester,
+      department: payload.department || "สโตร์ (Restock)",
+      machine_id: "RESTOCK",
+      serial_number: "",
+      total_price: 0,
+      note: payload.note || "เติมสต็อกสินค้า",
+      created_at: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+      status: "Restock",
+      items: [{
+        lot_id: lotId,
+        product_id: payload.id,
+        qty: qty,
+        cost: cost,
+        price: 0
+      }]
     };
-    var file = jsonFolder.createFile(FILE_NAME, JSON.stringify(initialData), "application/json");
-    return initialData;
+    
+    transactions.push(newRestockTransaction);
+    
+    // อัปเดตข้อมูล Firebase ในครั้งเดียวด้วย PATCH
+    const updates = {
+      "appData/products": products,
+      "lots": lots,
+      "transactions": transactions
+    };
+    patchFirebaseData("", updates);
+    
+    return { new_stock: product.stock_qty, transaction_id: nextTxId, lot_id: lotId };
+  } finally {
+    lock.releaseLock();
   }
 }
 
-// ฟังก์ชันบันทึกไฟล์ลงในโฟลเดอร์ JSON
-function saveDatabaseFile(data) {
-  var jsonFolder = DriveApp.getFolderById(JSON_FOLDER_ID);
-  var files = jsonFolder.getFilesByName(FILE_NAME);
-  var file;
-  if (files.hasNext()) {
-    file = files.next();
-    file.setContent(JSON.stringify(data));
-  } else {
-    file = jsonFolder.createFile(FILE_NAME, JSON.stringify(data), "application/json");
+function bulkRestockProducts(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const items = payload.items || [];
+    if (!Array.isArray(items) || items.length === 0) return { count: 0 };
+    
+    const db = getFirebaseData("") || {};
+    let products = db.appData?.products || [];
+    let lots = db.lots || [];
+    let transactions = db.transactions || [];
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    
+    const nowStamp = Date.now();
+    const dateTimeStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss");
+    let updatedCount = 0;
+    
+    items.forEach((itemPayload, idx) => {
+      const product = products.find(p => String(p.id).trim() === String(itemPayload.id).trim());
+      if (!product) return;
+      
+      const qty = parseFloat(itemPayload.qty) || 0;
+      const cost = (itemPayload.cost !== undefined && itemPayload.cost !== "") ? parseFloat(itemPayload.cost) : product.cost;
+      const pA = (itemPayload.price_a !== undefined && itemPayload.price_a !== "") ? parseFloat(itemPayload.price_a) : product.price_a;
+      const pB = (itemPayload.price_b !== undefined && itemPayload.price_b !== "") ? parseFloat(itemPayload.price_b) : product.price_b;
+      const pC = (itemPayload.price_c !== undefined && itemPayload.price_c !== "") ? parseFloat(itemPayload.price_c) : product.price_c;
+      
+      const lotId = "LOT-" + itemPayload.id + "-" + (nowStamp + idx);
+      lots.push({
+        lot_id: lotId,
+        product_id: itemPayload.id,
+        cost: cost,
+        price_a: pA,
+        price_b: pB,
+        price_c: pC,
+        initial_qty: qty,
+        remaining_qty: qty,
+        created_at: dateTimeStr,
+        note: itemPayload.note || "ปรับยอดสต็อกหลายรายการ"
+      });
+      
+      product.stock_qty = (parseFloat(product.stock_qty) || 0) + qty;
+      product.cost = cost;
+      product.price_a = pA;
+      product.price_b = pB;
+      product.price_c = pC;
+      
+      lastTxId++;
+      const nextTxId = "TX-" + String(lastTxId).padStart(6, '0');
+      
+      const newRestockTransaction = {
+        id: nextTxId,
+        requester: itemPayload.requester,
+        department: itemPayload.department || "สโตร์ (Restock Batch)",
+        machine_id: "RESTOCK",
+        serial_number: "",
+        total_price: 0,
+        note: itemPayload.note || "ปรับยอดสต็อกหลายรายการ",
+        created_at: dateTimeStr,
+        status: "Restock",
+        items: [{
+          lot_id: lotId,
+          product_id: itemPayload.id,
+          qty: qty,
+          cost: cost,
+          price: 0
+        }]
+      };
+      transactions.push(newRestockTransaction);
+      updatedCount++;
+    });
+    
+    const updates = {
+      "appData/products": products,
+      "lots": lots,
+      "transactions": transactions
+    };
+    patchFirebaseData("", updates);
+    
+    return { count: updatedCount };
+  } finally {
+    lock.releaseLock();
   }
 }
 
-// ฟังก์ชันอัปโหลดไฟล์ (รูปภาพ หรือ PDF) และสร้างลิงก์ Drive แยกโฟลเดอร์ตามชื่อถัง
-function uploadImageAndGetLh3Url(base64Data, fileName, folderName) {
+function receivePurchaseGoods(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    // ดึงข้อมูลทั้งหมดในครั้งเดียว
+    const db = getFirebaseData("") || {};
+    let purchaseOrders = db.appData?.purchaseOrders || [];
+    let products = db.appData?.products || [];
+    let lots = db.lots || [];
+    let transactions = db.transactions || [];
+    
+    const poNum = String(payload.poNumber).trim();
+    const poIndex = purchaseOrders.findIndex(o => String(o.poNumber).trim() === poNum);
+    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum);
+    
+    const po = purchaseOrders[poIndex];
+    const recAmt = parseFloat(payload.receivedAmount) || 0;
+    const currentReceived = parseFloat(po.receivedQty) || 0;
+    const ordered = parseFloat(po.orderedQty) || 0;
+    
+    const newReceived = currentReceived + recAmt;
+    if (newReceived > ordered) {
+      throw new Error("จำนวนรับเข้าสะสม (" + newReceived + ") เกินจำนวนที่สั่งซื้อไว้ (" + ordered + ")");
+    }
+    
+    const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd");
+    po.receivedQty = newReceived;
+    po.lastReceivedDate = nowStr;
+    
+    if (newReceived === ordered) {
+      po.status = "ได้รับครบ";
+    } else {
+      po.status = "ค้างส่ง";
+    }
+    
+    const lotId = "LOT-PO-" + poNum + "-" + Date.now();
+    lots.push({
+      lot_id: lotId,
+      product_id: po.productId,
+      cost: po.unitCost,
+      price_a: 0,
+      price_b: 0,
+      price_c: 0,
+      initial_qty: recAmt,
+      remaining_qty: recAmt,
+      created_at: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+      note: "รับสินค้าจาก PO " + poNum
+    });
+    
+    const product = products.find(p => String(p.id).trim() === String(po.productId).trim());
+    if (product) {
+      product.stock_qty = (parseFloat(product.stock_qty) || 0) + recAmt;
+      
+      const autoPrices = calculatePrices(po.unitCost);
+      product.cost = po.unitCost;
+      product.price_a = autoPrices.price_a;
+      product.price_b = autoPrices.price_b;
+      product.price_c = autoPrices.price_c;
+      
+      // อัปเดตราคาในล็อต PO
+      const lastLot = lots[lots.length - 1];
+      lastLot.price_a = autoPrices.price_a;
+      lastLot.price_b = autoPrices.price_b;
+      lastLot.price_c = autoPrices.price_c;
+    }
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+    
+    const newPoTransaction = {
+      id: nextTxId,
+      requester: payload.requester || "สโตร์ (รับเข้า)",
+      department: payload.department || "สโตร์ (รับเข้า)",
+      machine_id: "PO_RECEIVE",
+      serial_number: "",
+      total_price: 0,
+      note: "รับสินค้าจาก PO " + poNum,
+      created_at: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+      status: "Restock",
+      items: [{
+        lot_id: lotId,
+        product_id: po.productId,
+        qty: recAmt,
+        cost: po.unitCost,
+        price: 0
+      }]
+    };
+    
+    transactions.push(newPoTransaction);
+    
+    // อัปเดตข้อมูล Firebase ทั้งหมดในครั้งเดียวด้วย PATCH
+    const updates = {
+      "appData/purchaseOrders": purchaseOrders,
+      "appData/products": products,
+      "lots": lots,
+      "transactions": transactions
+    };
+    patchFirebaseData("", updates);
+    
+    return { status: "success", poNumber: poNum };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function addPurchaseOrderDraft(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const productId = String(payload.productId).trim();
+    const productName = String(payload.productName).trim();
+    const orderedQty = parseFloat(payload.orderedQty) || 0;
+    if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    
+    const todayStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd");
+    
+    let currentCost = 0;
+    let currentSupplier = "";
+    let products = getFirebaseData("appData/products") || [];
+    const product = products.find(p => String(p.id).trim() === productId);
+    if (product) {
+      currentCost = parseFloat(product.cost) || 0;
+      currentSupplier = String(product.supplier || "").trim();
+    }
+    
+    let purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+    const newPoNumber = "PO-DRF-" + Date.now();
+    
+    purchaseOrders.push({
+      poNumber: newPoNumber,
+      prNumber: "",
+      productId: productId,
+      productName: productName,
+      orderDate: todayStr,
+      orderedQty: orderedQty,
+      receivedQty: 0,
+      lastReceivedDate: "",
+      status: "เตรียมสั่ง",
+      unitCost: currentCost,
+      totalCost: orderedQty * currentCost,
+      supplier: currentSupplier
+    });
+    
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+    
+    return {
+      poNumber: newPoNumber,
+      productId: productId,
+      status: "เตรียมสั่ง"
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 12.3 แก้ไขจำนวนใบสั่งซื้อเตรียมสั่ง
+function editPurchaseOrderDraft(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const poNumber = String(payload.poNumber || '').trim();
+    const productId = String(payload.productId || '').trim();
+    const orderedQty = parseFloat(payload.orderedQty) || 0;
+    if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    
+    let purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+    let index = -1;
+    for (let i = 0; i < purchaseOrders.length; i++) {
+      const o = purchaseOrders[i];
+      if (poNumber && poNumber !== "") {
+        if (String(o.poNumber).trim() === poNumber) {
+          index = i;
+          break;
+        }
+      } else {
+        if (String(o.productId).trim() === productId && String(o.status).trim() === "เตรียมสั่ง") {
+          index = i;
+          break;
+        }
+      }
+    }
+    
+    if (index === -1) throw new Error("ไม่พบรายการใบสั่งซื้อที่ต้องการแก้ไข");
+    if (String(purchaseOrders[index].status).trim() !== "เตรียมสั่ง") {
+      throw new Error("สามารถแก้ไขได้เฉพาะรายการที่มีสถานะเตรียมสั่งเท่านั้น");
+    }
+    
+    purchaseOrders[index].orderedQty = orderedQty;
+    purchaseOrders[index].totalCost = orderedQty * (parseFloat(purchaseOrders[index].unitCost) || 0);
+    
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+    
+    return { poNumber: poNumber, productId: productId, orderedQty: orderedQty };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 12.4 ลบใบสั่งซื้อเตรียมสั่ง
+function deletePurchaseOrderDraft(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const poNumber = String(payload.poNumber || '').trim();
+    const productId = String(payload.productId || '').trim();
+    
+    let purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+    let index = -1;
+    for (let i = 0; i < purchaseOrders.length; i++) {
+      const o = purchaseOrders[i];
+      if (poNumber && poNumber !== "") {
+        if (String(o.poNumber).trim() === poNumber) {
+          index = i;
+          break;
+        }
+      } else {
+        if (String(o.productId).trim() === productId && String(o.status).trim() === "เตรียมสั่ง") {
+          index = i;
+          break;
+        }
+      }
+    }
+    
+    if (index === -1) throw new Error("ไม่พบรายการใบสั่งซื้อที่ต้องการลบ");
+    if (String(purchaseOrders[index].status).trim() !== "เตรียมสั่ง") {
+      throw new Error("สามารถลบได้เฉพาะรายการที่มีสถานะเตรียมสั่งเท่านั้น");
+    }
+    
+    purchaseOrders.splice(index, 1);
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+    
+    return { poNumber: poNumber, productId: productId, deleted: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 12.4.2 ลบใบสั่งซื้อที่มีสถานะค้างรับ/สั่งแล้ว (สิทธิ์ ADMIN)
+function deletePurchaseOrderActive(payload) {
+  const requesterEmail = String(payload.requesterEmail).trim().toLowerCase();
+  const poNumber = String(payload.poNumber || '').trim();
+  
+  const users = getUsersJSON();
+  const reqUser = users.find(u => String(u.email).toLowerCase() === requesterEmail);
+  if (!reqUser || reqUser.role !== 'ADMIN') {
+    throw new Error("คุณไม่มีสิทธิ์ลบรายการสั่งซื้อนี้");
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    let purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+    const index = purchaseOrders.findIndex(o => String(o.poNumber).trim() === poNumber);
+    if (index === -1) throw new Error("ไม่พบรายการใบสั่งซื้อเลขที่ " + poNumber);
+    
+    purchaseOrders.splice(index, 1);
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+    
+    return { poNumber: poNumber, deleted: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 12.5 อัปเดตข้อมูลใบสั่งซื้อในหน้าจัดการคำสั่งซื้อ
+function updatePurchaseOrderDraft(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const originalPoNumber = String(payload.originalPoNumber).trim();
+    const newPoNumber = String(payload.newPoNumber || '').trim();
+    const newPrNumber = String(payload.newPrNumber || '').trim();
+    const orderedQty = parseFloat(payload.orderedQty) || 0;
+    const unitCost = parseFloat(payload.unitCost) || 0;
+    const status = String(payload.status || '').trim();
+    const productId = String(payload.productId).trim();
+    const newSupplier = String(payload.newSupplier || '').trim();
+    
+    if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    
+    let purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+    const index = purchaseOrders.findIndex(o => String(o.poNumber).trim() === originalPoNumber);
+    if (index === -1) throw new Error("ไม่พบรายการใบสั่งซื้อต้นฉบับ " + originalPoNumber);
+    
+    let currentStatus = String(purchaseOrders[index].status).trim();
+    if (status) {
+      currentStatus = status;
+    } else if (newPoNumber && newPoNumber.indexOf("PO-DRF-") !== 0) {
+      currentStatus = "สั่งแล้ว";
+    }
+    
+    purchaseOrders[index] = {
+      poNumber: newPoNumber || originalPoNumber,
+      prNumber: newPrNumber || "PR-DRAFT",
+      productId: productId,
+      productName: purchaseOrders[index].productName,
+      orderDate: purchaseOrders[index].orderDate,
+      orderedQty: orderedQty,
+      receivedQty: parseFloat(purchaseOrders[index].receivedQty) || 0,
+      lastReceivedDate: purchaseOrders[index].lastReceivedDate || "",
+      status: currentStatus,
+      unitCost: unitCost,
+      totalCost: orderedQty * unitCost,
+      supplier: newSupplier
+    };
+    
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+    
+    if (newSupplier) {
+      let products = getFirebaseData("appData/products") || [];
+      const prodIndex = products.findIndex(p => String(p.id).trim() === productId);
+      if (prodIndex !== -1) {
+        products[prodIndex].supplier = newSupplier;
+        setFirebaseData("appData/products", products);
+      }
+    }
+    
+    return {
+      poNumber: newPoNumber || originalPoNumber,
+      status: currentStatus
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ===== Manual Management Functions =====
+
+// ฟังก์ชันอัปโหลดไฟล์คู่มือ (PDF หรือ รูปภาพ) ลงใน Google Drive
+function uploadManualFileToDrive(base64Data, fileName, mimeType) {
   try {
     if (!base64Data) return "";
-    
-    // ตรวจสอบ MIME type จาก data URI header
-    var mimeType = "image/jpeg"; // default
-    if (base64Data.startsWith("data:")) {
-      var mimeMatch = base64Data.match(/^data:([^;]+);base64,/);
-      if (mimeMatch) mimeType = mimeMatch[1];
+    // ถ้าเป็น URL อยู่แล้ว (เช่น ลิงก์เดิม) ไม่ต้องอัพโหลดซ้ำ
+    if (base64Data.indexOf('http://') === 0 || base64Data.indexOf('https://') === 0) {
+      return base64Data;
     }
-    
-    var base64 = base64Data.split(',')[1] || base64Data;
-    var decoded = Utilities.base64Decode(base64);
-    var blob = Utilities.newBlob(decoded, mimeType, fileName);
-    
-    var rootFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
-    
-    // ถ้าไม่ได้ส่ง folderName มา ให้พยายามสกัดจาก fileName
-    if (!folderName && fileName) {
-      var match = fileName.match(/(?:pack|dispatch|tank)_([^_]+)_/i);
-      if (match) {
-        folderName = match[1];
-      }
+    const parts = base64Data.split(',');
+    let type = mimeType || "application/pdf";
+    if (parts.length > 1 && parts[0].indexOf(';base64') !== -1) {
+      const match = parts[0].match(/data:(.*?);base64/);
+      if (match && match[1]) type = match[1];
     }
+    const base64 = parts[1] || base64Data;
+    const decoded = Utilities.base64Decode(base64);
     
-    var targetFolder = rootFolder;
-    if (folderName && folderName.trim() !== "") {
-      targetFolder = getOrCreateTankFolder(rootFolder, folderName.trim());
-    }
+    // ตั้งนามสกุลไฟล์ตามประเภท
+    let ext = ".pdf";
+    if (type.indexOf('image/png') !== -1) ext = ".png";
+    else if (type.indexOf('image/jpeg') !== -1 || type.indexOf('image/jpg') !== -1) ext = ".jpg";
+    else if (type.indexOf('image/webp') !== -1) ext = ".webp";
     
-    var file = targetFolder.createFile(blob);
+    const finalFileName = (fileName || ("manual_" + Date.now())) + ext;
+    const blob = Utilities.newBlob(decoded, type, finalFileName);
+    
+    const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
+    const file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
-    var fileId = file.getId();
-    
-    // PDF: ใช้ลิงก์ดาวน์โหลด Drive โดยตรง, รูปภาพ: ใช้ lh3
-    if (mimeType === "application/pdf") {
-      return 'https://drive.google.com/file/d/' + fileId + '/view?usp=sharing';
-    }
-    return 'https://lh3.googleusercontent.com/d/' + fileId;
+    // ลิงก์ดาวน์โหลดตรงจาก Google Drive
+    return 'https://drive.google.com/uc?export=download&id=' + file.getId();
   } catch (e) {
-    throw new Error("อัปโหลดไฟล์ล้มเหลว: " + e.message);
+    Logger.log("อัปโหลดไฟล์คู่มือลง Google Drive ล้มเหลว: " + e.toString());
+    return base64Data;
   }
 }
 
-// ฟังก์ชันช่วยสำหรับย้ายไฟล์ JSON ทั้งหมดจากโฟลเดอร์รูปภาพไปยังโฟลเดอร์ JSON (เรียกใช้ครั้งเดียวใน Apps Script Editor ได้)
-function moveAllJsonFilesToFolder() {
-  var imgFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
-  var jsonFolder = DriveApp.getFolderById(JSON_FOLDER_ID);
+function addManual(payload) {
+  const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd");
+  const id = payload.id || ("MAN-" + String(Date.now()).slice(-6));
   
-  var files = imgFolder.getFiles();
-  var count = 0;
-  while (files.hasNext()) {
-    var file = files.next();
-    if (file.getMimeType() === "application/json" || file.getName().toLowerCase().endsWith(".json")) {
-      file.moveTo(jsonFolder);
-      count++;
-    }
+  let fileUrl = payload.file_url || "";
+  if (fileUrl && fileUrl.indexOf("data:") === 0) {
+    const uploadedUrl = uploadManualFileToDrive(fileUrl, (payload.title || "manual") + "_" + id, payload.file_type);
+    if (uploadedUrl) fileUrl = uploadedUrl;
   }
-  Logger.log("ย้ายไฟล์ JSON ทั้งหมดจำนวน " + count + " ไฟล์ ไปยังโฟลเดอร์ JSON เรียบร้อยแล้ว");
-}
+  
+  let manuals = getFirebaseData("appData/manuals") || [];
+  manuals.push({
+    id: id,
+    title: payload.title || "",
+    description: payload.description || "",
+    file_url: fileUrl,
+    file_type: payload.file_type || "",
+    uploaded_at: nowStr
+  });
+  setFirebaseData("appData/manuals", manuals);
+  return { id: id, file_url: fileUrl };
+}
+
+function editManual(payload) {
+  let manuals = getFirebaseData("appData/manuals") || [];
+  const index = manuals.findIndex(m => String(m.id).trim() === String(payload.id).trim());
+  if (index === -1) throw new Error("ไม่พบคู่มือที่ต้องการแก้ไข");
+  
+  let fileUrl = payload.file_url || "";
+  if (fileUrl && fileUrl.indexOf("data:") === 0) {
+    const uploadedUrl = uploadManualFileToDrive(fileUrl, (payload.title || "manual") + "_" + payload.id, payload.file_type);
+    if (uploadedUrl) fileUrl = uploadedUrl;
+  } else {
+    fileUrl = manuals[index].file_url;
+  }
+  
+  manuals[index] = {
+    id: payload.id,
+    title: payload.title || "",
+    description: payload.description || "",
+    file_url: fileUrl,
+    file_type: payload.file_type || manuals[index].file_type,
+    uploaded_at: manuals[index].uploaded_at
+  };
+  setFirebaseData("appData/manuals", manuals);
+  return { status: "success", file_url: fileUrl };
+}
+
+function deleteManual(id) {
+  const targetId = String(id).trim();
+  let manuals = getFirebaseData("appData/manuals") || [];
+  manuals = manuals.filter(m => String(m.id).trim() !== targetId);
+  setFirebaseData("appData/manuals", manuals);
+  return { status: "success" };
+}
+
+// ===== Spreadsheet Custom Menu Integration =====
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('⚙️ ระบบจัดการเว็บไซต์')
+    .addItem('Sync ข้อมูลไปยังเว็บไซต์ (Update JSON)', 'menuSyncToWebsite')
+    .addToUi();
+}
+
+function menuSyncToWebsite() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    // บังคับให้โยน Error ออกมาหาก Firebase ซิงค์ไม่ผ่านเพื่อแสดงสาเหตุในหน้าต่างแจ้งเตือน
+    rebuildAndSaveAppDataJson(true);
+    ui.alert('✅ สำเร็จ', 'อัปเดตไฟล์ข้อมูล JSON ใน Google Drive และ Firebase เรียบร้อยแล้ว หน้าเว็บจะดึงข้อมูลชุดใหม่ไปแสดงโดยอัตโนมัติ', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('⚠️ เกิดข้อผิดพลาดในการซิงค์', 'รายละเอียด: ' + e.toString() + '\n\n(กรุณาตรวจสอบการตั้งค่า Firebase URL หรือ Rules ใน Firebase Console ให้พร้อมเขียนข้อมูล)', ui.ButtonSet.OK);
+  }
+}
+
+// ===== Manual Backup Systems (Admin on Website) =====
+
+function backupFirebaseToDrive() {
+  const products = getFirebaseData("appData/products") || [];
+  const machines = getFirebaseData("appData/machines") || [];
+  const mappings = getFirebaseData("mappings") || [];
+  const settings = getFirebaseData("appData/settings") || { isShowPriceBForGuest: false, isShowPriceCForGuest: false };
+  const manuals = getFirebaseData("appData/manuals") || [];
+  const lots = getFirebaseData("lots") || [];
+  const purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+  
+  const appData = {
+    products: products,
+    machines: machines,
+    mappings: mappings,
+    settings: settings,
+    manuals: manuals,
+    lots: lots,
+    purchaseOrders: purchaseOrders
+  };
+  
+  const folder = DriveApp.getFolderById(JSON_FOLDER_ID);
+  
+  // บันทึก app_data.json
+  const appDataFiles = folder.getFilesByName("app_data.json");
+  const appDataContent = JSON.stringify(appData);
+  if (appDataFiles.hasNext()) {
+    appDataFiles.next().setContent(appDataContent);
+  } else {
+    folder.createFile("app_data.json", appDataContent, MimeType.PLAIN_TEXT);
+  }
+  
+  // บันทึก lots.json
+  const lotsFiles = folder.getFilesByName("lots.json");
+  const lotsContent = JSON.stringify(lots);
+  if (lotsFiles.hasNext()) {
+    lotsFiles.next().setContent(lotsContent);
+  } else {
+    folder.createFile("lots.json", lotsContent, MimeType.PLAIN_TEXT);
+  }
+  
+  // บันทึก mappings.json
+  const mapFiles = folder.getFilesByName("mappings.json");
+  const mapContent = JSON.stringify(mappings);
+  if (mapFiles.hasNext()) {
+    mapFiles.next().setContent(mapContent);
+  } else {
+    folder.createFile("mappings.json", mapContent, MimeType.PLAIN_TEXT);
+  }
+
+  // บันทึก transactions.json
+  const transactions = getFirebaseData("transactions") || [];
+  const txFiles = folder.getFilesByName("transactions.json");
+  const txContent = JSON.stringify(transactions);
+  if (txFiles.hasNext()) {
+    txFiles.next().setContent(txContent);
+  } else {
+    folder.createFile("transactions.json", txContent, MimeType.PLAIN_TEXT);
+  }
+  
+  // บันทึก users.json
+  const users = getFirebaseData("users") || [];
+  const userFiles = folder.getFilesByName("users.json");
+  const userContent = JSON.stringify(users);
+  if (userFiles.hasNext()) {
+    userFiles.next().setContent(userContent);
+  } else {
+    folder.createFile("users.json", userContent, MimeType.PLAIN_TEXT);
+  }
+}
+
+function backupFirebaseToSheets() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  // 1. Products Sheet
+  const products = getFirebaseData("appData/products") || [];
+  const prodSheet = ss.getSheetByName("Products");
+  if (prodSheet) {
+    prodSheet.clearContents();
+    prodSheet.appendRow(["Product_ID", "Product_Name", "Unit", "Cost", "Price_A", "Price_B", "Price_C", "Category", "Note", "Image_URL", "Stock_Qty", "Product_Group", "Supplier", "Storage_Area"]);
+    products.forEach(p => {
+      prodSheet.appendRow([
+        p.id, p.name, p.unit, p.cost, p.price_a, p.price_b, p.price_c,
+        p.category, p.note, p.image_url, p.stock_qty, p.group || "", p.supplier || "", p.storage || ""
+      ]);
+    });
+  }
+  
+  // 2. Machines Sheet
+  const machines = getFirebaseData("appData/machines") || [];
+  const machSheet = ss.getSheetByName("Machines");
+  if (machSheet) {
+    machSheet.clearContents();
+    machSheet.appendRow(["Machine_ID", "Machine_Name", "Image_URL", "Cost", "Price_A", "Price_B", "Price_C", "Note", "Machine_Group", "Supplier", "Storage_Area"]);
+    machines.forEach(m => {
+      machSheet.appendRow([
+        m.id, m.name, m.image_url || "", m.cost || 0, m.price_a || 0, m.price_b || 0, m.price_c || 0, m.note || "",
+        m.group || "", m.supplier || "", m.storage || ""
+      ]);
+    });
+  }
+  
+  // 3. Settings Sheet
+  const settings = getFirebaseData("appData/settings") || {};
+  const settingsSheet = ss.getSheetByName("Settings");
+  if (settingsSheet) {
+    settingsSheet.clearContents();
+    settingsSheet.appendRow(["Setting_Key", "Setting_Value"]);
+    settingsSheet.appendRow(["isShowPriceBForGuest", settings.isShowPriceBForGuest ? "true" : "false"]);
+    settingsSheet.appendRow(["isShowPriceCForGuest", settings.isShowPriceCForGuest ? "true" : "false"]);
+  }
+  
+  // 4. Manuals Sheet
+  const manuals = getFirebaseData("appData/manuals") || [];
+  const manSheet = ss.getSheetByName("Manuals");
+  if (manSheet) {
+    manSheet.clearContents();
+    manSheet.appendRow(["Manual_ID", "Title", "Description", "File_URL", "File_Type", "Uploaded_At"]);
+    manuals.forEach(m => {
+      manSheet.appendRow([
+        m.id, m.title, m.description || "", m.file_url || "", m.file_type || "", m.uploaded_at || ""
+      ]);
+    });
+  }
+  
+  // 5. PurchaseOrders Sheet
+  const purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+  const poSheet = ss.getSheetByName("PurchaseOrders");
+  if (poSheet) {
+    poSheet.clearContents();
+    poSheet.appendRow(["PO_Number", "PR_Number", "Product_ID", "Product_Name", "Order_Date", "Ordered_Qty", "Received_Qty", "Last_Received_Date", "Status", "Unit_Cost", "Total_Cost", "Supplier"]);
+    purchaseOrders.forEach(o => {
+      poSheet.appendRow([
+        o.poNumber, o.prNumber || "", o.productId, o.productName, o.orderDate, o.orderedQty, o.receivedQty, o.lastReceivedDate || "",
+        o.status, o.unitCost || 0, o.totalCost || 0, o.supplier || ""
+      ]);
+    });
+  }
+
+  // 6. Transactions Sheet
+  const transactions = getFirebaseData("transactions") || [];
+  const txSheet = ss.getSheetByName("Transactions");
+  if (txSheet) {
+    txSheet.clearContents();
+    txSheet.appendRow(["Transaction_ID", "Requester", "Department", "Machine_ID", "Serial_Number", "Total_Price", "Note", "Created_At", "Status", "Items_JSON"]);
+    transactions.forEach(t => {
+      txSheet.appendRow([
+        t.id, t.requester, t.department, t.machine_id, t.serial_number || "", t.total_price, t.note || "", t.created_at, t.status, JSON.stringify(t.items || [])
+      ]);
+    });
+  }
+}
+
+// ===== Spreadsheet Custom Menu Integration =====
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('⚙️ ระบบจัดการเว็บไซต์')
+    .addItem('1. อัพโหลดข้อมูล JSON -> Firebase', 'menuUploadJsonToFirebase')
+    .addItem('2. อัพโหลดข้อมูล Google Sheet -> Firebase', 'menuUploadSheetsToFirebase')
+    .addToUi();
+}
+
+function menuUploadJsonToFirebase() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('ยืนยันการทำงาน', 'คุณต้องการอัปโหลดข้อมูลจากไฟล์ JSON ใน Google Drive ไปเขียนทับบน Firebase ใช่หรือไม่? (ข้อมูลปัจจุบันบน Firebase จะถูกแทนที่ทั้งหมด)', ui.ButtonSet.YES_NO);
+  if (response !== ui.Button.YES) return;
+  
+  try {
+    const folder = DriveApp.getFolderById(JSON_FOLDER_ID);
+    
+    // 1. อัปโหลด app_data.json
+    const appDataFiles = folder.getFilesByName("app_data.json");
+    if (appDataFiles.hasNext()) {
+      const appData = JSON.parse(appDataFiles.next().getBlob().getDataAsString());
+      if (appData) {
+        setFirebaseData("appData/products", appData.products || []);
+        setFirebaseData("appData/machines", appData.machines || []);
+        setFirebaseData("mappings", appData.mappings || []);
+        setFirebaseData("appData/settings", appData.settings || {});
+        setFirebaseData("appData/manuals", appData.manuals || []);
+        setFirebaseData("lots", appData.lots || []);
+        setFirebaseData("appData/purchaseOrders", appData.purchaseOrders || []);
+      }
+    }
+    
+    // 2. อัปโหลด transactions.json
+    const txFiles = folder.getFilesByName("transactions.json");
+    if (txFiles.hasNext()) {
+      const transactions = JSON.parse(txFiles.next().getBlob().getDataAsString());
+      if (transactions) setFirebaseData("transactions", transactions);
+    }
+    
+    // 3. อัปโหลด users.json
+    const userFiles = folder.getFilesByName("users.json");
+    if (userFiles.hasNext()) {
+      const users = JSON.parse(userFiles.next().getBlob().getDataAsString());
+      if (users) setFirebaseData("users", users);
+    }
+    
+    ui.alert('✅ สำเร็จ', 'อัปโหลดข้อมูลจาก JSON ใน Google Drive ขึ้น Firebase เรียบร้อยแล้ว', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('❌ ผิดพลาด', 'เกิดข้อผิดพลาดในการอัปโหลด: ' + e.toString(), ui.ButtonSet.OK);
+  }
+}
+
+function menuUploadSheetsToFirebase() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('ยืนยันการทำงาน', 'คุณต้องการอัปโหลดข้อมูลจาก Google Sheet ในปัจจุบันขึ้นไปเขียนทับบน Firebase ใช่หรือไม่? (ข้อมูลปัจจุบันบน Firebase จะถูกแทนที่ทั้งหมด)', ui.ButtonSet.YES_NO);
+  if (response !== ui.Button.YES) return;
+  
+  try {
+    initDatabase();
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
+    // 1. อ่าน Products
+    const prodSheet = ss.getSheetByName("Products");
+    const prodData = prodSheet.getDataRange().getValues();
+    const products = [];
+    if (prodData.length > 1) {
+      for (let i = 1; i < prodData.length; i++) {
+        let r = prodData[i];
+        products.push({
+          id: r[0], name: r[1], unit: r[2], cost: parseFloat(r[3]) || 0,
+          price_a: parseFloat(r[4]) || 0, price_b: parseFloat(r[5]) || 0, price_c: parseFloat(r[6]) || 0,
+          category: r[7], note: r[8], image_url: r[9],
+          stock_qty: (r[10] !== undefined && r[10] !== "") ? parseFloat(r[10]) : 0,
+          group: r[11] || "", supplier: r[12] || "", storage: r[13] || ""
+        });
+      }
+    }
+    setFirebaseData("appData/products", products);
+    
+    // 2. อ่าน Machines
+    const machSheet = ss.getSheetByName("Machines");
+    const machData = machSheet.getDataRange().getValues();
+    const machines = [];
+    if (machData.length > 1) {
+      for (let i = 1; i < machData.length; i++) {
+        let r = machData[i];
+        machines.push({ 
+          id: r[0], name: r[1], image_url: r[2] || '', cost: parseFloat(r[3]) || 0,
+          price_a: parseFloat(r[4]) || 0, price_b: parseFloat(r[5]) || 0, price_c: parseFloat(r[6]) || 0,
+          note: r[7] || '', group: r[8] || '', supplier: r[9] || '', storage: r[10] || ''
+        });
+      }
+    }
+    setFirebaseData("appData/machines", machines);
+    
+    // 3. อ่าน Settings
+    const settingsSheet = ss.getSheetByName("Settings");
+    const settings = { isShowPriceBForGuest: false, isShowPriceCForGuest: false };
+    if (settingsSheet) {
+      const settingsData = settingsSheet.getDataRange().getValues();
+      if (settingsData.length > 1) {
+        for (let i = 1; i < settingsData.length; i++) {
+          let key = settingsData[i][0];
+          let val = settingsData[i][1];
+          if (key === "isShowPriceBForGuest") settings.isShowPriceBForGuest = (String(val).toLowerCase() === "true");
+          if (key === "isShowPriceCForGuest") settings.isShowPriceCForGuest = (String(val).toLowerCase() === "true");
+        }
+      }
+    }
+    setFirebaseData("appData/settings", settings);
+    
+    // 4. อ่าน Manuals
+    const manSheet = ss.getSheetByName("Manuals");
+    const manuals = [];
+    if (manSheet) {
+      const manData = manSheet.getDataRange().getValues();
+      if (manData.length > 1) {
+        for (let i = 1; i < manData.length; i++) {
+          manuals.push({
+            id: manData[i][0], title: manData[i][1], description: manData[i][2] || '',
+            file_url: manData[i][3] || '', file_type: manData[i][4] || '', uploaded_at: manData[i][5] || ''
+          });
+        }
+      }
+    }
+    setFirebaseData("appData/manuals", manuals);
+    
+    // 5. อ่าน PurchaseOrders
+    const poSheet = ss.getSheetByName("PurchaseOrders");
+    const purchaseOrders = [];
+    if (poSheet) {
+      const poData = poSheet.getDataRange().getValues();
+      if (poData.length > 1) {
+        const timeZone = ss.getSpreadsheetTimeZone();
+        for (let i = 1; i < poData.length; i++) {
+          let orderDateStr = poData[i][4] instanceof Date ? Utilities.formatDate(poData[i][4], timeZone, "yyyy-MM-dd") : String(poData[i][4]);
+          let lastReceivedDateStr = poData[i][7] instanceof Date ? Utilities.formatDate(poData[i][7], timeZone, "yyyy-MM-dd") : String(poData[i][7]);
+          purchaseOrders.push({
+            poNumber: poData[i][0], prNumber: poData[i][1], productId: poData[i][2], productName: poData[i][3],
+            orderDate: orderDateStr, orderedQty: parseFloat(poData[i][5] || 0), receivedQty: parseFloat(poData[i][6] || 0),
+            lastReceivedDate: lastReceivedDateStr, status: poData[i][8] || '',
+            unitCost: parseFloat(poData[i][9]) || 0, totalCost: parseFloat(poData[i][10]) || 0, supplier: poData[i][11] || ""
+          });
+        }
+      }
+    }
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+    
+    // 6. อ่าน Transactions จาก Sheet
+    const txSheet = ss.getSheetByName("Transactions");
+    if (txSheet) {
+      const txData = txSheet.getDataRange().getValues();
+      const transactions = [];
+      if (txData.length > 1) {
+        for (let i = 1; i < txData.length; i++) {
+          let items = [];
+          try {
+            items = JSON.parse(txData[i][9] || "[]");
+          } catch(e) {}
+          transactions.push({
+            id: txData[i][0], requester: txData[i][1], department: txData[i][2], machine_id: txData[i][3],
+            serial_number: txData[i][4], total_price: parseFloat(txData[i][5]) || 0, note: txData[i][6],
+            created_at: String(txData[i][7]), status: txData[i][8], items: items
+          });
+        }
+        setFirebaseData("transactions", transactions);
+      }
+    }
+
+    ui.alert('✅ สำเร็จ', 'อัปโหลดข้อมูลจาก Google Sheet ขึ้น Firebase เรียบร้อยแล้ว', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('❌ ผิดพลาด', 'เกิดข้อผิดพลาดในการอัปโหลด: ' + e.toString(), ui.ButtonSet.OK);
+  }
+}
