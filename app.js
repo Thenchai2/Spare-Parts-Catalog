@@ -2207,8 +2207,24 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 return;
             }
 
-            const confirmMsg = `ต้องการบันทึกการปรับยอดสต็อกอะไหล่จำนวน ${itemsToUpdate.length} รายการ ใช่หรือไม่?`;
-            if (!confirm(confirmMsg)) return;
+            const confirmResult = await Swal.fire({
+                title: 'ยืนยันการบันทึกปรับยอดสต็อก',
+                html: `คุณต้องการบันทึกการปรับยอดสต็อกอะไหล่จำนวน <b class="text-blue-600 font-bold">${itemsToUpdate.length} รายการ</b> ใช่หรือไม่?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: '<i class="fa-solid fa-floppy-disk mr-1.5"></i> ยืนยันบันทึก',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
+                    confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-blue-500/30',
+                    cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
+                }
+            });
+
+            if (!confirmResult.isConfirmed) return;
 
             const operator = (isLoggedIn && currentUser && currentUser.fullName) ? currentUser.fullName : 'สโตร์';
 
@@ -2528,6 +2544,25 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 return;
             }
             
+            const confirmResult = await Swal.fire({
+                title: 'ยืนยันการปรับปรุงสต็อก',
+                html: `คุณต้องการบันทึก <b class="text-blue-600 font-bold">${escapeHTML(transactionNote)}</b> สำหรับอะไหล่รหัส <b class="text-gray-900 font-mono font-bold">${escapeHTML(productId)}</b> ใช่หรือไม่?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: '<i class="fa-solid fa-floppy-disk mr-1.5"></i> ยืนยันบันทึก',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
+                    confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-blue-500/30',
+                    cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
+                }
+            });
+
+            if (!confirmResult.isConfirmed) return;
+
             const payload = {
                 id: productId,
                 qty: qtyToSend,
@@ -2535,7 +2570,7 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 department: "สโตร์ (ปรับปรุงสต็อก)",
                 note: transactionNote
             };
-            
+
             showLoading('กำลังบันทึกข้อมูลการปรับปรุงสต็อก...');
             try {
                 let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'restockProduct', payload: payload }) });
@@ -2952,6 +2987,25 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 return;
             }
             
+            const confirmResult = await Swal.fire({
+                title: 'ยืนยันการเติมสต็อกสินค้า',
+                html: `คุณต้องการบันทึกเติมสต็อกอะไหล่รหัส <b class="text-gray-900 font-mono font-bold">${escapeHTML(productId)}</b> จำนวน <b class="text-blue-600 font-bold">${qty}</b> ชิ้น ใช่หรือไม่?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#64748b',
+                confirmButtonText: '<i class="fa-solid fa-floppy-disk mr-1.5"></i> ยืนยันเติมสต็อก',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
+                    confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-blue-500/30',
+                    cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
+                }
+            });
+
+            if (!confirmResult.isConfirmed) return;
+
             const payload = {
                 id: productId,
                 qty: qty,
