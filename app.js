@@ -1,5 +1,5 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbx2Y9ySye3CfrwPjr3WiVrYLAKwTj0YlSqiObr94h_L0SagMvxZ7sYTHVVk-jYUDyiLig/exec';
-const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app/appData.json';
+const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app/.json';
         
         let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
         let isShowCostInCatalog = false;
@@ -1155,15 +1155,19 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                                     return [];
                                 };
                                 
-                                fbData.products = ensureArray(fbData.products);
-                                fbData.machines = ensureArray(fbData.machines);
-                                fbData.mappings = ensureArray(fbData.mappings);
-                                fbData.purchaseOrders = ensureArray(fbData.purchaseOrders);
-                                if (fbData.manuals) fbData.manuals = ensureArray(fbData.manuals);
-                                if (fbData.lots) fbData.lots = ensureArray(fbData.lots);
+                                const appDataNode = fbData.appData || {};
+                                const consolidated = {
+                                    products: ensureArray(appDataNode.products),
+                                    machines: ensureArray(appDataNode.machines),
+                                    mappings: ensureArray(fbData.mappings),
+                                    settings: appDataNode.settings || {},
+                                    manuals: ensureArray(appDataNode.manuals),
+                                    lots: ensureArray(fbData.lots),
+                                    purchaseOrders: ensureArray(appDataNode.purchaseOrders)
+                                };
                                 
-                                if (fbData.products && fbData.products.length > 0) {
-                                    data = fbData;
+                                if (consolidated.products && consolidated.products.length > 0) {
+                                    data = consolidated;
                                 }
                             }
                         }
@@ -3231,6 +3235,7 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
             const sugg = document.getElementById('machine_suggestions');
             if (sugg) sugg.classList.add('hidden');
             currentMapProductPage = 1;
+            updateMappingSubmitButton(); // Sync button state to disabled on load
             filterMapMachines(); 
         }
 
@@ -3397,7 +3402,13 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
             try {
                 let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'addMapping', payload: { product_ids: pids, machine_id: mid } }) });
                 let result = await res.json();
-                if(result.status === 'success') { showToast('บันทึกการจับคู่อะไหล่เรียบร้อย'); fetchData(); } 
+                if(result.status === 'success') { 
+                    showToast('บันทึกการจับคู่อะไหล่เรียบร้อย'); 
+                    selectedMappingProducts.clear();
+                    updateMappingSubmitButton();
+                    filterMapProducts();
+                    fetchData(); 
+                } 
                 else showToast(result.message, 'error');
             } catch (err) { showToast('เกิดข้อผิดพลาดเครือข่าย', 'error'); }
             hideLoading();
