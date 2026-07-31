@@ -1,0 +1,287 @@
+// ซอร์สโค้ดสำหรับ Google Apps Script (GAS) - แยกเก็บไฟล์ JSON และรูปภาพ
+const IMAGE_FOLDER_ID = "1psCFMOXqH0iECEMWJSBX_4uL0vfajhDO"; // โฟลเดอร์สำหรับเก็บรูปภาพและโฟลเดอร์ถัง
+const JSON_FOLDER_ID = "1JKBSMhRY0hHwkB3y8V3cJR-TZwnKUIU8";  // โฟลเดอร์สำหรับเก็บไฟล์ JSON (แยกออกจากรูปภาพ)
+const FOLDER_ID = IMAGE_FOLDER_ID; // alias เพื่อรองรับการทำงานเดิม
+const FILE_NAME = "pk_tank_data_database.json";
+
+// ฟังก์ชันค้นหาหรือสร้างโฟลเดอร์ย่อยตามชื่อถัง (Tank Folder)
+function getOrCreateTankFolder(rootFolder, folderName) {
+  if (!folderName) return rootFolder;
+  var name = folderName.trim();
+  if (!name) return rootFolder;
+  
+  var subFolders = rootFolder.getFoldersByName(name);
+  if (subFolders.hasNext()) {
+    return subFolders.next();
+  } else {
+    return rootFolder.createFolder(name);
+  }
+}
+
+// ฟังก์ชันลบโฟลเดอร์ของถังออกจาก Drive (ย้ายลงถังขยะ)
+function deleteTankFolder(rootFolder, folderName) {
+  if (!folderName) return;
+  var name = folderName.trim();
+  if (!name) return;
+  
+  try {
+    var subFolders = rootFolder.getFoldersByName(name);
+    while (subFolders.hasNext()) {
+      var folder = subFolders.next();
+      folder.setTrashed(true);
+    }
+  } catch (e) {
+    Logger.log("Could not delete folder " + name + ": " + e.message);
+  }
+}
+
+// ฟังก์ชันดึง File ID จาก URL ของรูปภาพหรือ PDF ใน Google Drive
+function extractFileIdFromUrl(url) {
+  if (!url) return null;
+  // รูปแบบ lh3.googleusercontent.com/d/{fileId}
+  var lh3Match = url.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/);
+  if (lh3Match) return lh3Match[1];
+  // รูปแบบ drive.google.com/file/d/{fileId}/view
+  var driveMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) return driveMatch[1];
+  return null;
+}
+
+// ฟังก์ชันลบไฟล์ใน Drive จาก array ของ URL
+function deleteFilesFromUrls(imageUrls) {
+  if (!imageUrls || imageUrls.length === 0) return;
+  imageUrls.forEach(function(url) {
+    var trimmed = url.trim();
+    var fileId = extractFileIdFromUrl(trimmed);
+    if (fileId) {
+      try {
+        DriveApp.getFileById(fileId).setTrashed(true);
+      } catch (e) {
+        // ไฟล์อาจถูกลบไปแล้ว หรือไม่มีสิทธิ์ ไม่ต้อง throw
+        Logger.log("Could not delete file " + fileId + ": " + e.message);
+      }
+    }
+  });
+}
+
+// ฟังก์ชันรวบรวม imageUrls ทั้งหมดจากประวัติถัง
+function collectImageUrlsFromTank(tankData) {
+  var urls = [];
+  if (!tankData || !tankData.history) return urls;
+  tankData.history.forEach(function(h) {
+    if (h.imageUrl) {
+      // imageUrl อาจมีหลาย URL คั่นด้วย comma
+      h.imageUrl.split(',').forEach(function(u) {
+        var trimmed = u.trim();
+        if (trimmed) urls.push(trimmed);
+      });
+    }
+  });
+  return urls;
+}
+
+// ฟังก์ชันดึงข้อมูลทั้งหมด (GET)
+function doGet(e) {
+  var data = getDatabaseFile();
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ฟังก์ชันบันทึกข้อมูล (POST)
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); // ล็อกระบบป้องกันการเขียนข้อมูลพร้อมกัน (รอสูงสุด 10 วินาที)
+    
+    var requestData = JSON.parse(e.postData.contents);
+    var action = requestData.action;
+    var payload = requestData.payload;
+    
+    var dbData = getDatabaseFile();
+    
+    if (action === "save_tanks") {
+      dbData.tanks = dbData.tanks || {};
+      for (var id in payload) {
+        dbData.tanks[id] = payload[id];
+      }
+      dbData.lastUpdated = Date.now();
+    } 
+    else if (action === "delete_tank") {
+      // ลบเฉพาะ JSON record (ไม่ลบไฟล์ใน Drive)
+      var tankId = payload.tankId;
+      if (dbData.tanks[tankId]) {
+        delete dbData.tanks[tankId];
+      }
+      dbData.lastUpdated = Date.now();
+    }
+    else if (action === "delete_tank_with_files") {
+      // ลบไฟล์และโฟลเดอร์ใน Drive ทั้งหมดของถัง แล้วลบ JSON record
+      var tankId = payload.tankId;
+      if (dbData.tanks[tankId]) {
+        var imageUrls = collectImageUrlsFromTank(dbData.tanks[tankId]);
+        deleteFilesFromUrls(imageUrls);
+        var rootFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+        deleteTankFolder(rootFolder, tankId);
+        delete dbData.tanks[tankId];
+      }
+      dbData.lastUpdated = Date.now();
+    }
+    else if (action === "delete_all_with_files") {
+      // ลบไฟล์และโฟลเดอร์ใน Drive ของทุกถัง แล้วล้าง tanks ทั้งหมด
+      var tankIds = Object.keys(dbData.tanks || {});
+      var rootFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+      tankIds.forEach(function(id) {
+        if (dbData.tanks[id]) {
+          var imageUrls = collectImageUrlsFromTank(dbData.tanks[id]);
+          deleteFilesFromUrls(imageUrls);
+          deleteTankFolder(rootFolder, id);
+          delete dbData.tanks[id];
+        }
+      });
+      dbData.lastUpdated = Date.now();
+    }
+    else if (action === "save_settings") {
+      dbData.settings = payload;
+      dbData.lastUpdated = Date.now();
+    }
+    else if (action === "delete_all_history") {
+      var allTankIds = Object.keys(dbData.tanks || {});
+      allTankIds.forEach(function(id) {
+        if (dbData.tanks[id]) {
+          // ลบไฟล์ใน Drive ก่อนล้าง history
+          var imageUrls = collectImageUrlsFromTank(dbData.tanks[id]);
+          deleteFilesFromUrls(imageUrls);
+          dbData.tanks[id].history = [];
+        }
+      });
+      dbData.lastUpdated = Date.now();
+    }
+    else if (action === "upload_image") {
+      var folderName = payload.folderName || payload.tankId;
+      var imageUrl = uploadImageAndGetLh3Url(payload.base64Data, payload.fileName, folderName);
+      return ContentService.createTextOutput(JSON.stringify({ status: "success", imageUrl: imageUrl }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    saveDatabaseFile(dbData);
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", lastUpdated: dbData.lastUpdated }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ฟังก์ชันดึงไฟล์หรือสร้างใหม่หากไม่มี ในโฟลเดอร์ JSON
+function getDatabaseFile() {
+  var jsonFolder = DriveApp.getFolderById(JSON_FOLDER_ID);
+  var files = jsonFolder.getFilesByName(FILE_NAME);
+  if (files.hasNext()) {
+    var file = files.next();
+    var content = file.getBlob().getDataAsString();
+    return JSON.parse(content);
+  } else {
+    // ถ้ายังไม่มีใน JSON_FOLDER_ID ให้ลองค้นหาใน IMAGE_FOLDER_ID แล้วย้ายมาโดยอัตโนมัติ
+    try {
+      var imgFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+      var oldFiles = imgFolder.getFilesByName(FILE_NAME);
+      if (oldFiles.hasNext()) {
+        var oldFile = oldFiles.next();
+        var content = oldFile.getBlob().getDataAsString();
+        oldFile.moveTo(jsonFolder); // ย้ายไฟล์มายังโฟลเดอร์ JSON ใหม่
+        Logger.log("ย้ายไฟล์ " + FILE_NAME + " ไปยังโฟลเดอร์ JSON เรียบร้อยแล้ว");
+        return JSON.parse(content);
+      }
+    } catch (e) {
+      Logger.log("ไม่สามารถย้ายไฟล์เดิมได้: " + e.message);
+    }
+
+    var initialData = {
+      tanks: {},
+      settings: { ready: 30, stock: 45, customer: 7 },
+      lastUpdated: Date.now()
+    };
+    var file = jsonFolder.createFile(FILE_NAME, JSON.stringify(initialData), "application/json");
+    return initialData;
+  }
+}
+
+// ฟังก์ชันบันทึกไฟล์ลงในโฟลเดอร์ JSON
+function saveDatabaseFile(data) {
+  var jsonFolder = DriveApp.getFolderById(JSON_FOLDER_ID);
+  var files = jsonFolder.getFilesByName(FILE_NAME);
+  var file;
+  if (files.hasNext()) {
+    file = files.next();
+    file.setContent(JSON.stringify(data));
+  } else {
+    file = jsonFolder.createFile(FILE_NAME, JSON.stringify(data), "application/json");
+  }
+}
+
+// ฟังก์ชันอัปโหลดไฟล์ (รูปภาพ หรือ PDF) และสร้างลิงก์ Drive แยกโฟลเดอร์ตามชื่อถัง
+function uploadImageAndGetLh3Url(base64Data, fileName, folderName) {
+  try {
+    if (!base64Data) return "";
+    
+    // ตรวจสอบ MIME type จาก data URI header
+    var mimeType = "image/jpeg"; // default
+    if (base64Data.startsWith("data:")) {
+      var mimeMatch = base64Data.match(/^data:([^;]+);base64,/);
+      if (mimeMatch) mimeType = mimeMatch[1];
+    }
+    
+    var base64 = base64Data.split(',')[1] || base64Data;
+    var decoded = Utilities.base64Decode(base64);
+    var blob = Utilities.newBlob(decoded, mimeType, fileName);
+    
+    var rootFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+    
+    // ถ้าไม่ได้ส่ง folderName มา ให้พยายามสกัดจาก fileName
+    if (!folderName && fileName) {
+      var match = fileName.match(/(?:pack|dispatch|tank)_([^_]+)_/i);
+      if (match) {
+        folderName = match[1];
+      }
+    }
+    
+    var targetFolder = rootFolder;
+    if (folderName && folderName.trim() !== "") {
+      targetFolder = getOrCreateTankFolder(rootFolder, folderName.trim());
+    }
+    
+    var file = targetFolder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    var fileId = file.getId();
+    
+    // PDF: ใช้ลิงก์ดาวน์โหลด Drive โดยตรง, รูปภาพ: ใช้ lh3
+    if (mimeType === "application/pdf") {
+      return 'https://drive.google.com/file/d/' + fileId + '/view?usp=sharing';
+    }
+    return 'https://lh3.googleusercontent.com/d/' + fileId;
+  } catch (e) {
+    throw new Error("อัปโหลดไฟล์ล้มเหลว: " + e.message);
+  }
+}
+
+// ฟังก์ชันช่วยสำหรับย้ายไฟล์ JSON ทั้งหมดจากโฟลเดอร์รูปภาพไปยังโฟลเดอร์ JSON (เรียกใช้ครั้งเดียวใน Apps Script Editor ได้)
+function moveAllJsonFilesToFolder() {
+  var imgFolder = DriveApp.getFolderById(IMAGE_FOLDER_ID);
+  var jsonFolder = DriveApp.getFolderById(JSON_FOLDER_ID);
+  
+  var files = imgFolder.getFiles();
+  var count = 0;
+  while (files.hasNext()) {
+    var file = files.next();
+    if (file.getMimeType() === "application/json" || file.getName().toLowerCase().endsWith(".json")) {
+      file.moveTo(jsonFolder);
+      count++;
+    }
+  }
+  Logger.log("ย้ายไฟล์ JSON ทั้งหมดจำนวน " + count + " ไฟล์ ไปยังโฟลเดอร์ JSON เรียบร้อยแล้ว");
+}
