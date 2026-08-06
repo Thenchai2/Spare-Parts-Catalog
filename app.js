@@ -5083,6 +5083,90 @@ function exportRestockHistoryToExcel() {
             }
         }
 
+        function handleTransactionFilterChange() {
+            transactionsCurrentPage = 1;
+            renderTransactionsTable();
+        }
+
+        function renderTransactionsTable() {
+            const tbody = document.getElementById('transactionTableBody');
+            const searchKeyword = (document.getElementById('searchTransactionInput')?.value || '').toLowerCase();
+            const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
+            const statusFilter = (document.getElementById('filterTransactionStatus')?.value) || 'all';
+            
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            // กรองข้อมูลสำหรับบทบาทั่วไป ให้เห็นเฉพาะของตัวเอง และเอาเฉพาะข้อมูลเบิกจ่าย (ไม่ใช่ Restock/รับเข้า)
+            let transactionsToRender = transactions.filter(t => t.status !== 'Restock' && t.machine_id !== 'PO_RECEIVE' && t.machine_id !== 'RESTOCK');
+            if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
+                transactionsToRender = transactionsToRender.filter(t => t.requester === currentUser.fullName);
+            }
+            
+            let filtered = transactionsToRender.filter(t => {
+                const textToSearch = `${t.id} ${t.requester} ${t.department}`.toLowerCase();
+                const matchSearch = keywords.length === 0 || keywords.every(kw => textToSearch.includes(kw));
+                const matchStatus = statusFilter === 'all' || t.status === statusFilter;
+                return matchSearch && matchStatus;
+            });
+            
+            const pageSize = 20;
+            const totalItems = filtered.length;
+            const totalPages = Math.ceil(totalItems / pageSize);
+
+            if (transactionsCurrentPage > totalPages) transactionsCurrentPage = totalPages;
+            if (transactionsCurrentPage < 1) transactionsCurrentPage = 1;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="p-10 text-center text-gray-400"><i class="fa-solid fa-receipt text-4xl mb-3 opacity-30 block"></i>ไม่พบข้อมูลใบเบิกที่ค้นหา</td></tr>`;
+                renderGenericPagination('transactionsPaginationContainer', 'transactionsPaginationInfo', 'transactionsPaginationControls', 0, 1, pageSize, 'changeTransactionsPage');
+                return;
+            }
+            
+            const startIndex = (transactionsCurrentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginated = filtered.slice(startIndex, endIndex);
+
+            paginated.forEach((t, index) => {
+                const globalIndex = startIndex + index + 1;
+                const isCancelled = t.status === 'Cancelled';
+                let statusHtml = '';
+                if (isCancelled) {
+                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">ยกเลิกใบเบิก</span>`;
+                } else if (t.status === 'Restock') {
+                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">เติมสต็อก</span>`;
+                } else {
+                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">เบิกจ่ายสำเร็จ</span>`;
+                }
+                
+                const totalVal = t.status === 'Restock' ? '-' : `฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                
+                let tr = `
+                    <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 ${isCancelled ? 'bg-red-50/10' : ''}">
+                        <td class="p-4 text-center text-gray-500">${globalIndex}</td>
+                        <td class="p-4 font-bold text-gray-900">${escapeHTML(t.id)}</td>
+                        <td class="p-4 text-gray-500 text-xs font-semibold">${escapeHTML(t.date)}</td>
+                        <td class="p-4 text-gray-700 font-semibold">${escapeHTML(t.requester)}</td>
+                        <td class="p-4 text-gray-600">${escapeHTML(t.department)}</td>
+                        <td class="p-4 text-gray-500 font-medium">${escapeHTML(t.machine_id)}</td>
+                        <td class="p-4 text-right font-bold text-blue-600">฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-4 text-center">${statusHtml}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm inline-flex items-center gap-1.5" title="ดูรายละเอียดใบเบิก"><i class="fa-solid fa-eye"></i> รายละเอียด</button>
+                        </td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', tr);
+            });
+
+            renderGenericPagination('transactionsPaginationContainer', 'transactionsPaginationInfo', 'transactionsPaginationControls', totalItems, transactionsCurrentPage, pageSize, 'changeTransactionsPage');
+        }
+
+        window.changeTransactionsPage = function(page) {
+            transactionsCurrentPage = page;
+            renderTransactionsTable();
+        };
+
         function getActiveDocumentIds() {
             const selectedMach = document.getElementById('report_filter_mach').value;
             const selectedReq = document.getElementById('report_filter_req').value;
@@ -5446,63 +5530,6 @@ function exportReportToExcel() {
             hideLoading();
         }
 
-        function renderTransactionsTable() {
-            const tbody = document.getElementById('transactionTableBody');
-            const searchKeyword = document.getElementById('searchTransactionInput').value.toLowerCase();
-            const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
-            const statusFilter = document.getElementById('filterTransactionStatus').value;
-            
-            tbody.innerHTML = '';
-
-            // กรองข้อมูลสำหรับบทบาททั่วไป ให้เห็นเฉพาะของตัวเอง และเอาเฉพาะข้อมูลเบิกจ่าย (ไม่ใช่ Restock/รับเข้า)
-            let transactionsToRender = transactions.filter(t => t.status !== 'Restock' && t.machine_id !== 'PO_RECEIVE' && t.machine_id !== 'RESTOCK');
-            if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
-                transactionsToRender = transactionsToRender.filter(t => t.requester === currentUser.fullName);
-            }
-            
-            let filtered = transactionsToRender.filter(t => {
-                const textToSearch = `${t.id} ${t.requester} ${t.department}`.toLowerCase();
-                const matchSearch = keywords.length === 0 || keywords.every(kw => textToSearch.includes(kw));
-                const matchStatus = statusFilter === 'all' || t.status === statusFilter;
-                return matchSearch && matchStatus;
-            });
-            
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="p-10 text-center text-gray-400"><i class="fa-solid fa-receipt text-4xl mb-3 opacity-30 block"></i>ไม่พบข้อมูลใบเบิกที่ค้นหา</td></tr>`;
-                return;
-            }
-            
-            filtered.forEach((t, index) => {
-                const isCancelled = t.status === 'Cancelled';
-                let statusHtml = '';
-                if (isCancelled) {
-                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">ยกเลิกใบเบิก</span>`;
-                } else if (t.status === 'Restock') {
-                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">เติมสต็อก</span>`;
-                } else {
-                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">เบิกจ่ายสำเร็จ</span>`;
-                }
-                
-                const totalVal = t.status === 'Restock' ? '-' : `฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                
-                let tr = `
-                    <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 ${isCancelled ? 'bg-red-50/10' : ''}">
-                        <td class="p-4 text-center text-gray-500">${index + 1}</td>
-                        <td class="p-4 font-bold text-gray-900">${escapeHTML(t.id)}</td>
-                        <td class="p-4 text-gray-500 text-xs font-semibold">${escapeHTML(t.date)}</td>
-                        <td class="p-4 text-gray-700 font-semibold">${escapeHTML(t.requester)}</td>
-                        <td class="p-4 text-gray-600">${escapeHTML(t.department)}</td>
-                        <td class="p-4 text-gray-500 font-medium">${escapeHTML(t.machine_id)}</td>
-                        <td class="p-4 text-right font-bold text-blue-600">฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        <td class="p-4 text-center">${statusHtml}</td>
-                        <td class="p-4 text-center">
-                            <button onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm inline-flex items-center gap-1.5" title="ดูรายละเอียดใบเบิก"><i class="fa-solid fa-eye"></i> รายละเอียด</button>
-                        </td>
-                    </tr>
-                `;
-                tbody.insertAdjacentHTML('beforeend', tr);
-            });
-        }
 
         function openTransactionDetailModal(txId) {
             const t = transactions.find(x => x.id === txId);
@@ -6067,13 +6094,13 @@ function exportReportToExcel() {
         }
 
         function renderPublicManualsTable(filteredData = null) {
-            const manuals = filteredData || getManualsData();
+            const allManuals = filteredData || getManualsData();
             const tbody = document.getElementById('tableBodyPublicManuals');
             const countEl = document.getElementById('countPublicManuals');
-            if (countEl) countEl.innerText = manuals.length;
+            if (countEl) countEl.innerText = allManuals.length;
             if (!tbody) return;
 
-            if (manuals.length === 0) {
+            if (allManuals.length === 0) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="4" class="py-12 text-center text-gray-400">
@@ -6082,12 +6109,22 @@ function exportReportToExcel() {
                         </td>
                     </tr>
                 `;
+                renderGenericPagination('publicManualsPaginationContainer', 'publicManualsPaginationInfo', 'publicManualsPaginationControls', 0, 1, 20, 'changePublicManualsPage');
                 return;
             }
 
+            const pmPageSize = 20;
+            const pmTotalItems = allManuals.length;
+            const pmTotalPages = Math.ceil(pmTotalItems / pmPageSize);
+            if (publicManualsCurrentPage > pmTotalPages) publicManualsCurrentPage = pmTotalPages;
+            if (publicManualsCurrentPage < 1) publicManualsCurrentPage = 1;
+            const pmStart = (publicManualsCurrentPage - 1) * pmPageSize;
+            const pmEnd = pmStart + pmPageSize;
+            const manuals = allManuals.slice(pmStart, pmEnd);
+
             tbody.innerHTML = manuals.map((m, idx) => `
                 <tr class="hover:bg-slate-50/80 transition-colors">
-                    <td class="py-3.5 px-4 text-center font-medium text-slate-500">${idx + 1}</td>
+                    <td class="py-3.5 px-4 text-center font-medium text-slate-500">${pmStart + idx + 1}</td>
                     <td class="py-3.5 px-4 font-semibold text-slate-800">
                         <div class="flex items-center gap-2">
                             <i class="${getManualIconClass(m.file_type)} text-indigo-600"></i>
@@ -6107,10 +6144,18 @@ function exportReportToExcel() {
                     </td>
                 </tr>
             `).join('');
+
+            renderGenericPagination('publicManualsPaginationContainer', 'publicManualsPaginationInfo', 'publicManualsPaginationControls', pmTotalItems, publicManualsCurrentPage, pmPageSize, 'changePublicManualsPage');
         }
+
+        window.changePublicManualsPage = function(page) {
+            publicManualsCurrentPage = page;
+            renderPublicManualsTable();
+        };
 
         function filterPublicManualsTable() {
             const query = (document.getElementById('searchPublicManualsInput')?.value || '').toLowerCase().trim();
+            publicManualsCurrentPage = 1;
             const manuals = getManualsData();
             if (!query) {
                 renderPublicManualsTable(manuals);
@@ -6128,13 +6173,13 @@ function exportReportToExcel() {
         }
 
         function renderManageManualsTable(filteredData = null) {
-            const manuals = filteredData || getManualsData();
+            const allManuals = filteredData || getManualsData();
             const tbody = document.getElementById('tableBodyManageManuals');
             const countEl = document.getElementById('countManageManuals');
-            if (countEl) countEl.innerText = manuals.length;
+            if (countEl) countEl.innerText = allManuals.length;
             if (!tbody) return;
 
-            if (manuals.length === 0) {
+            if (allManuals.length === 0) {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="6" class="py-12 text-center text-gray-400">
@@ -6144,12 +6189,22 @@ function exportReportToExcel() {
                         </td>
                     </tr>
                 `;
+                renderGenericPagination('manageManualsPaginationContainer', 'manageManualsPaginationInfo', 'manageManualsPaginationControls', 0, 1, 20, 'changeManualsPage');
                 return;
             }
 
+            const mmPageSize = 20;
+            const mmTotalItems = allManuals.length;
+            const mmTotalPages = Math.ceil(mmTotalItems / mmPageSize);
+            if (manageManualsCurrentPage > mmTotalPages) manageManualsCurrentPage = mmTotalPages;
+            if (manageManualsCurrentPage < 1) manageManualsCurrentPage = 1;
+            const mmStart = (manageManualsCurrentPage - 1) * mmPageSize;
+            const mmEnd = mmStart + mmPageSize;
+            const manuals = allManuals.slice(mmStart, mmEnd);
+
             tbody.innerHTML = manuals.map((m, idx) => `
                 <tr class="hover:bg-purple-50/40 transition-colors">
-                    <td class="py-3.5 px-4 text-center font-medium text-slate-500">${idx + 1}</td>
+                    <td class="py-3.5 px-4 text-center font-medium text-slate-500">${mmStart + idx + 1}</td>
                     <td class="py-3.5 px-4 font-semibold text-slate-800">
                         <div class="flex items-center gap-2">
                             <i class="${getManualIconClass(m.file_type)} text-purple-600"></i>
@@ -6179,10 +6234,18 @@ function exportReportToExcel() {
                     </td>
                 </tr>
             `).join('');
+
+            renderGenericPagination('manageManualsPaginationContainer', 'manageManualsPaginationInfo', 'manageManualsPaginationControls', mmTotalItems, manageManualsCurrentPage, mmPageSize, 'changeManualsPage');
         }
+
+        window.changeManualsPage = function(page) {
+            manageManualsCurrentPage = page;
+            renderManageManualsTable();
+        };
 
         function filterManageManualsTable() {
             const query = (document.getElementById('searchManageManualsInput')?.value || '').toLowerCase().trim();
+            manageManualsCurrentPage = 1;
             const manuals = getManualsData();
             if (!query) {
                 renderManageManualsTable(manuals);
@@ -6539,6 +6602,11 @@ function exportReportToExcel() {
         let purchaseSearchQuery = '';
         let dashboardOrdersSearchQuery = '';
         let dashboardOrdersCurrentPage = 1;
+        let poHistoryCurrentPage = 1;
+        let receiveHistoryCurrentPage = 1;
+        let transactionsCurrentPage = 1;
+        let publicManualsCurrentPage = 1;
+        let manageManualsCurrentPage = 1;
         let draftOrdersSearchQuery = '';
         let manageOrdersSearchQuery = '';
         let manageOrdersSupplierFilter = '';
@@ -6855,6 +6923,12 @@ function exportReportToExcel() {
                             <div id="purchaseHistoryCardsContainer" class="space-y-4">
                                 <!-- Cards rendered dynamically -->
                             </div>
+
+                            <!-- Pagination for PO History -->
+                            <div id="poHistoryPaginationContainer" class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-150 p-4 rounded-2xl shadow-sm mt-4 hidden">
+                                <div id="poHistoryPaginationInfo" class="text-xs text-slate-500 font-medium"></div>
+                                <div id="poHistoryPaginationControls" class="flex items-center gap-1"></div>
+                            </div>
                         </div>
 
                         <!-- Receive-in History View -->
@@ -6866,13 +6940,19 @@ function exportReportToExcel() {
                                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                                         <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
                                     </span>
-                                    <input type="text" id="searchReceiveHistoryInput" onkeyup="renderReceiveHistoryTable()" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา รหัสใบรับ, ผู้รับ, หมายเหตุ...">
+                                    <input type="text" id="searchReceiveHistoryInput" onkeyup="handleReceiveHistorySearch()" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา รหัสใบรับ, ผู้รับ, หมายเหตุ...">
                                 </div>
                             </div>
 
                             <!-- Receiving History Cards Container -->
                             <div id="receiveHistoryCardsContainer" class="space-y-4">
                                 <!-- Cards rendered dynamically -->
+                            </div>
+
+                            <!-- Pagination for Receive History -->
+                            <div id="receiveHistoryPaginationContainer" class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-150 p-4 rounded-2xl shadow-sm mt-4 hidden">
+                                <div id="receiveHistoryPaginationInfo" class="text-xs text-slate-500 font-medium"></div>
+                                <div id="receiveHistoryPaginationControls" class="flex items-center gap-1"></div>
                             </div>
                         </div>
                     </div>
@@ -7273,7 +7353,7 @@ function exportReportToExcel() {
                         <td class="p-4 text-center font-extrabold text-rose-600 bg-rose-50/30">${pendingQty}</td>
                         <td class="p-4 text-center">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="handleReceiveGoods('${escapeForJS(o.poNumber)}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] transition shadow-sm hover:shadow-md active:scale-95">
+                                <button onclick="handleReceiveGoods('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-[11px] transition shadow-sm hover:shadow-md active:scale-95">
                                     <i class="fa-solid fa-square-check"></i> รับสินค้า
                                 </button>
                                 ${isAdmin ? `
@@ -7452,6 +7532,90 @@ function exportReportToExcel() {
             controlsEl.innerHTML = buttonsHtml;
         }
 
+        function renderGenericPagination(containerId, infoId, controlsId, totalItems, currentPage, pageSize, changePageFuncName) {
+            const container = document.getElementById(containerId);
+            const infoEl = document.getElementById(infoId);
+            const controlsEl = document.getElementById(controlsId);
+            if (!container) return;
+
+            const totalPages = Math.ceil(totalItems / pageSize);
+
+            if (totalItems === 0 || totalPages <= 1) {
+                container.classList.add('hidden');
+                if (infoEl) infoEl.innerHTML = '';
+                if (controlsEl) controlsEl.innerHTML = '';
+                return;
+            }
+
+            container.classList.remove('hidden');
+
+            const startItem = (currentPage - 1) * pageSize + 1;
+            const endItem = Math.min(currentPage * pageSize, totalItems);
+            if (infoEl) {
+                infoEl.innerHTML = `แสดง <span class="font-bold text-slate-800">${startItem} - ${endItem}</span> จากทั้งหมด <span class="font-bold text-slate-800">${totalItems}</span> รายการ (หน้า <span class="font-bold text-indigo-600">${currentPage}</span> / ${totalPages})`;
+            }
+
+            if (!controlsEl) return;
+
+            let buttonsHtml = '';
+
+            // First page <<
+            buttonsHtml += `
+                <button onclick="${changePageFuncName}(1)" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าแรก">
+                    <i class="fa-solid fa-angles-left"></i>
+                </button>
+            `;
+
+            // Prev page <
+            buttonsHtml += `
+                <button onclick="${changePageFuncName}(${currentPage - 1})" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าก่อนหน้า">
+                    <i class="fa-solid fa-angle-left mr-1"></i> ก่อนหน้า
+                </button>
+            `;
+
+            // Page numbers
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, currentPage + 2);
+
+            if (startPage > 1) {
+                buttonsHtml += `<button onclick="${changePageFuncName}(1)" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">1</button>`;
+                if (startPage > 2) {
+                    buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+                }
+            }
+
+            for (let p = startPage; p <= endPage; p++) {
+                if (p === currentPage) {
+                    buttonsHtml += `<button class="px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-500/20 cursor-default">${p}</button>`;
+                } else {
+                    buttonsHtml += `<button onclick="${changePageFuncName}(${p})" class="px-3.5 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm">${p}</button>`;
+                }
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+                }
+                buttonsHtml += `<button onclick="${changePageFuncName}(${totalPages})" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">${totalPages}</button>`;
+            }
+
+            // Next page >
+            buttonsHtml += `
+                <button onclick="${changePageFuncName}(${currentPage + 1})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าถัดไป">
+                    ถัดไป <i class="fa-solid fa-angle-right ml-1"></i>
+                </button>
+            `;
+
+            // Last page >>
+            buttonsHtml += `
+                <button onclick="${changePageFuncName}(${totalPages})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าสุดท้าย">
+                    <i class="fa-solid fa-angles-right"></i>
+                </button>
+            `;
+
+            controlsEl.innerHTML = buttonsHtml;
+        }
+
         window.changeDashboardOrdersPage = function(p) {
             dashboardOrdersCurrentPage = p;
             renderDashboardOrdersTable();
@@ -7531,9 +7695,12 @@ function exportReportToExcel() {
             });
         }
 
-        function handleReceiveGoods(poNumber) {
+        function handleReceiveGoods(poNumber, productId) {
             const orders = db.purchaseOrders || [];
-            const order = orders.find(o => o.poNumber === poNumber);
+            const order = orders.find(o =>
+                String(o.poNumber).trim() === String(poNumber).trim() &&
+                String(o.productId).trim() === String(productId).trim()
+            );
             if (!order) {
                 showToast("ไม่พบรายการใบสั่งซื้อนี้", "error");
                 return;
@@ -7621,6 +7788,7 @@ function exportReportToExcel() {
                     try {
                         const payload = {
                             poNumber: poNumber,
+                            productId: productId,
                             receivedAmount: receivedAmount,
                             requester: currentUser ? currentUser.fullName : "เจ้าหน้าที่สโตว์",
                             department: currentUser ? currentUser.department : "จัดซื้อ"
@@ -8474,16 +8642,19 @@ function exportReportToExcel() {
         }
 
         function handleHistorySearch(val) {
+            poHistoryCurrentPage = 1;
             purchaseHistorySearchQuery = val.trim().toLowerCase();
             renderPurchaseHistoryCards();
         }
 
         function handleHistoryCategoryFilter(val) {
+            poHistoryCurrentPage = 1;
             purchaseHistoryCategoryFilter = val.trim();
             renderPurchaseHistoryCards();
         }
 
         function handleHistoryGroupFilter(val) {
+            poHistoryCurrentPage = 1;
             purchaseHistoryGroupFilter = val.trim();
             renderPurchaseHistoryCards();
         }
@@ -8560,6 +8731,13 @@ function exportReportToExcel() {
             // Sort cards by the latest order date descending
             cardData.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
 
+            const pageSize = 20;
+            const totalItems = cardData.length;
+            const totalPages = Math.ceil(totalItems / pageSize);
+
+            if (poHistoryCurrentPage > totalPages) poHistoryCurrentPage = totalPages;
+            if (poHistoryCurrentPage < 1) poHistoryCurrentPage = 1;
+
             if (cardData.length === 0) {
                 container.innerHTML = `
                     <div class="border border-slate-150 rounded-2xl p-8 bg-slate-50/50 flex flex-col items-center justify-center text-center py-12">
@@ -8568,11 +8746,16 @@ function exportReportToExcel() {
                         <p class="text-xs text-slate-400 mt-1">ไม่มีข้อมูลประวัติใบสั่งซื้อที่ตรงกับเงื่อนไขการค้นหา</p>
                     </div>
                 `;
+                renderGenericPagination('poHistoryPaginationContainer', 'poHistoryPaginationInfo', 'poHistoryPaginationControls', 0, 1, pageSize, 'changePoHistoryPage');
                 return;
             }
 
+            const startIndex = (poHistoryCurrentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const pageCardData = cardData.slice(startIndex, endIndex);
+
             container.innerHTML = '';
-            cardData.forEach((card, index) => {
+            pageCardData.forEach((card, index) => {
                 const cardId = `history-card-${index}`;
                 const detailId = `history-detail-${index}`;
                 const arrowId = `history-arrow-${index}`;
@@ -8674,7 +8857,14 @@ function exportReportToExcel() {
                 `;
                 container.insertAdjacentHTML('beforeend', cardHtml);
             });
+
+            renderGenericPagination('poHistoryPaginationContainer', 'poHistoryPaginationInfo', 'poHistoryPaginationControls', totalItems, poHistoryCurrentPage, pageSize, 'changePoHistoryPage');
         }
+
+        window.changePoHistoryPage = function(page) {
+            poHistoryCurrentPage = page;
+            renderPurchaseHistoryCards();
+        };
 
         window.setPurchaseHistoryTab = function(tab) {
             const btnPo = document.getElementById('tab-history-po');
@@ -8689,12 +8879,14 @@ function exportReportToExcel() {
                 btnReceive.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800";
                 secPo.classList.remove('hidden');
                 secReceive.classList.add('hidden');
+                poHistoryCurrentPage = 1;
                 renderPurchaseHistoryCards();
             } else {
                 btnReceive.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/55";
                 btnPo.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800";
                 secReceive.classList.remove('hidden');
                 secPo.classList.add('hidden');
+                receiveHistoryCurrentPage = 1;
                 renderReceiveHistoryTable();
             }
         };
@@ -8805,8 +8997,18 @@ function exportReportToExcel() {
                         <p class="text-xs text-slate-400 mt-1">ไม่มีข้อมูลประวัติการรับเข้าคลังที่ตรงกับเงื่อนไขการค้นหา</p>
                     </div>
                 `;
+                renderGenericPagination('receiveHistoryPaginationContainer', 'receiveHistoryPaginationInfo', 'receiveHistoryPaginationControls', 0, 1, 20, 'changeReceiveHistoryPage');
                 return;
             }
+
+            const rxPageSize = 20;
+            const rxTotalItems = receiveGroups.length;
+            const rxTotalPages = Math.ceil(rxTotalItems / rxPageSize);
+            if (receiveHistoryCurrentPage > rxTotalPages) receiveHistoryCurrentPage = rxTotalPages;
+            if (receiveHistoryCurrentPage < 1) receiveHistoryCurrentPage = 1;
+            const rxStartIndex = (receiveHistoryCurrentPage - 1) * rxPageSize;
+            const rxEndIndex = rxStartIndex + rxPageSize;
+            const pagedReceiveGroups = receiveGroups.slice(rxStartIndex, rxEndIndex);
 
             const formatDateTimeThai = (dateStr) => {
                 if (!dateStr) return '-';
@@ -8825,7 +9027,7 @@ function exportReportToExcel() {
                 return `${d}/${m}/${y} ${timePart}`.trim();
             };
 
-            receiveGroups.forEach((g, index) => {
+            pagedReceiveGroups.forEach((g, index) => {
                 let productName = 'ไม่พบชื่อสินค้า';
                 let productId = '';
                 let unit = 'ชิ้น';
@@ -8966,6 +9168,18 @@ function exportReportToExcel() {
                 `;
                 container.insertAdjacentHTML('beforeend', cardHtml);
             });
+
+            renderGenericPagination('receiveHistoryPaginationContainer', 'receiveHistoryPaginationInfo', 'receiveHistoryPaginationControls', rxTotalItems, receiveHistoryCurrentPage, rxPageSize, 'changeReceiveHistoryPage');
+        };
+
+        window.handleReceiveHistorySearch = function() {
+            receiveHistoryCurrentPage = 1;
+            renderReceiveHistoryTable();
+        };
+
+        window.changeReceiveHistoryPage = function(page) {
+            receiveHistoryCurrentPage = page;
+            renderReceiveHistoryTable();
         };
 
         window.toggleHistoryCardDetail = function(detailId, arrowId) {
@@ -10616,8 +10830,12 @@ async function executeDirectReceivePurchaseGoods(payload) {
     let transactions = ensureArray(fbData.transactions);
     
     const poNum = String(payload.poNumber).trim();
-    const poIndex = purchaseOrders.findIndex(o => String(o.poNumber).trim() === poNum);
-    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum);
+    const prodId = String(payload.productId || '').trim();
+    const poIndex = purchaseOrders.findIndex(o =>
+        String(o.poNumber).trim() === poNum &&
+        (!prodId || String(o.productId).trim() === prodId)
+    );
+    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum + (prodId ? ` (${prodId})` : ''));
     
     const po = purchaseOrders[poIndex];
     const recAmt = parseFloat(payload.receivedAmount) || 0;

@@ -1485,8 +1485,12 @@ function receivePurchaseGoods(payload) {
     let transactions = db.transactions || [];
     
     const poNum = String(payload.poNumber).trim();
-    const poIndex = purchaseOrders.findIndex(o => String(o.poNumber).trim() === poNum);
-    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum);
+    const prodId = String(payload.productId || '').trim();
+    const poIndex = purchaseOrders.findIndex(o =>
+      String(o.poNumber).trim() === poNum &&
+      (!prodId || String(o.productId).trim() === prodId)
+    );
+    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum + (prodId ? ` (${prodId})` : ''));
     
     const po = purchaseOrders[poIndex];
     const recAmt = parseFloat(payload.receivedAmount) || 0;
