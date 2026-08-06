@@ -7334,7 +7334,7 @@ function exportReportToExcel() {
                 },
                 preConfirm: () => {
                     const receiveInput = document.getElementById('swal-receive-qty');
-                    const receiveVal = parseInt(receiveInput.value);
+                    const receiveVal = parseFloat(receiveInput.value);
                     if (isNaN(receiveVal) || receiveVal <= 0) {
                         Swal.showValidationMessage('กรุณากรอกจำนวนที่ถูกต้อง (มากกว่า 0)');
                         return false;
@@ -7627,7 +7627,7 @@ function exportReportToExcel() {
                         return false;
                     }
                     const qtyInput = document.getElementById('swal-order-qty');
-                    const qtyVal = parseInt(qtyInput.value);
+                    const qtyVal = parseFloat(qtyInput.value);
                     if (isNaN(qtyVal) || qtyVal <= 0) {
                         Swal.showValidationMessage('กรุณากรอกจำนวนที่ถูกต้อง (มากกว่า 0)');
                         return false;
@@ -7698,7 +7698,7 @@ function exportReportToExcel() {
                 },
                 preConfirm: () => {
                     const qtyInput = document.getElementById('swal-edit-qty');
-                    const qtyVal = parseInt(qtyInput.value);
+                    const qtyVal = parseFloat(qtyInput.value);
                     if (isNaN(qtyVal) || qtyVal <= 0) {
                         Swal.showValidationMessage('กรุณากรอกจำนวนที่ถูกต้อง');
                         return false;
