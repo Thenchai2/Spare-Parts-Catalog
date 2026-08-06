@@ -8033,6 +8033,7 @@ function exportReportToExcel() {
 
             const prod = db.products.find(p => String(p.id).trim() === String(order.productId).trim());
             const currentSupplier = order.supplier || (prod ? (prod.supplier || '') : '');
+            const currentUnit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
 
             let initialCost = parseFloat(order.unitCost) || 0;
             if (initialCost === 0 && prod) {
@@ -8074,8 +8075,8 @@ function exportReportToExcel() {
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                                <label class="block font-semibold text-slate-600 mb-1">Supplier</label>
-                                <input type="text" id="swal-update-supplier" value="${escapeHTML(currentSupplier)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุซัพพลายเออร์">
+                                <label class="block font-semibold text-slate-600 mb-1">หน่วยนับ</label>
+                                <input type="text" id="swal-update-unit" value="${escapeHTML(currentUnit)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุหน่วยนับ (เช่น ชิ้น, กล่อง)">
                             </div>
                             <div>
                                 <label class="block font-semibold text-slate-600 mb-1">สถานะ</label>
@@ -8085,6 +8086,11 @@ function exportReportToExcel() {
                                     <option value="สั่งแล้ว" ${order.status === 'สั่งแล้ว' ? 'selected' : ''}>สั่งแล้ว (นำออกจากหน้านี้)</option>
                                 </select>
                             </div>
+                        </div>
+
+                        <div>
+                            <label class="block font-semibold text-slate-600 mb-1">Supplier</label>
+                            <input type="text" id="swal-update-supplier" value="${escapeHTML(currentSupplier)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุซัพพลายเออร์">
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -8121,12 +8127,14 @@ function exportReportToExcel() {
                     const statusSelect = document.getElementById('swal-update-status');
                     const poInput = document.getElementById('swal-update-po');
                     const prInput = document.getElementById('swal-update-pr');
+                    const unitInput = document.getElementById('swal-update-unit');
 
                     const qtyVal = parseFloat(qtyInput.value);
                     const costVal = parseFloat(costInput.value) || 0;
                     const statusVal = statusSelect.value;
                     const poVal = poInput.value.trim();
                     const prVal = prInput.value.trim();
+                    const unitVal = unitInput.value.trim() || 'ชิ้น';
 
                     if (isNaN(qtyVal) || qtyVal <= 0) {
                         Swal.showValidationMessage('กรุณากรอกจำนวนที่สั่งซื้อให้ถูกต้อง');
@@ -8151,7 +8159,8 @@ function exportReportToExcel() {
                         unitCost: costVal,
                         status: statusVal,
                         productId: order.productId,
-                        newSupplier: supplierInput.value.trim()
+                        newSupplier: supplierInput.value.trim(),
+                        newUnit: unitVal
                     };
                 }
             }).then(async (result) => {
@@ -9983,6 +9992,7 @@ async function executeDirectUpdatePurchaseOrderDraft(payload) {
     const status = String(payload.status || '').trim();
     const productId = String(payload.productId).trim();
     const newSupplier = String(payload.newSupplier || '').trim();
+    const newUnit = String(payload.newUnit || '').trim();
     
     if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
     
@@ -10016,6 +10026,9 @@ async function executeDirectUpdatePurchaseOrderDraft(payload) {
     if (product) {
         product.cost = unitCost;
         product.supplier = newSupplier;
+        if (newUnit) {
+            product.unit = newUnit;
+        }
 
         // Auto-pricing update based on new cost
         let factorA = 1.05;

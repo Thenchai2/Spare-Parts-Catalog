@@ -1779,6 +1779,7 @@ function updatePurchaseOrderDraft(payload) {
     const status = String(payload.status || '').trim();
     const productId = String(payload.productId).trim();
     const newSupplier = String(payload.newSupplier || '').trim();
+    const newUnit = String(payload.newUnit || '').trim();
     
     if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
     
@@ -1814,6 +1815,9 @@ function updatePurchaseOrderDraft(payload) {
     if (prodIndex !== -1) {
       products[prodIndex].cost = unitCost;
       products[prodIndex].supplier = newSupplier;
+      if (newUnit) {
+        products[prodIndex].unit = newUnit;
+      }
 
       // Auto-pricing update based on new cost
       let factorA = 1.05;
