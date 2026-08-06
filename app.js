@@ -5454,10 +5454,10 @@ function exportReportToExcel() {
             
             tbody.innerHTML = '';
 
-            // กรองข้อมูลสำหรับบทบาททั่วไป ให้เห็นเฉพาะของตัวเอง
-            let transactionsToRender = transactions;
+            // กรองข้อมูลสำหรับบทบาททั่วไป ให้เห็นเฉพาะของตัวเอง และเอาเฉพาะข้อมูลเบิกจ่าย (ไม่ใช่ Restock/รับเข้า)
+            let transactionsToRender = transactions.filter(t => t.status !== 'Restock' && t.machine_id !== 'PO_RECEIVE' && t.machine_id !== 'RESTOCK');
             if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
-                transactionsToRender = transactions.filter(t => t.requester === currentUser.fullName);
+                transactionsToRender = transactionsToRender.filter(t => t.requester === currentUser.fullName);
             }
             
             let filtered = transactionsToRender.filter(t => {
@@ -5509,41 +5509,148 @@ function exportReportToExcel() {
             if (!t) return;
             
             const isRestock = t.status === 'Restock';
-            document.getElementById('tdm_id_subtitle').innerText = (isRestock ? "เลขที่ใบเติมสต็อก: " : "เลขที่ใบเบิก: ") + t.id;
-            document.getElementById('tdm_date').innerText = t.date;
+            const isCancelled = t.status === 'Cancelled';
+            
+            const titleEl = document.getElementById('tdm_title_main');
+            const statusLabelEl = document.getElementById('tdm_status_label');
+            const requesterLabelEl = document.getElementById('tdm_requester_label');
+            const departmentLabelEl = document.getElementById('tdm_department_label');
+            const machineLabelEl = document.getElementById('tdm_machine_label');
+            const serialLabelEl = document.getElementById('tdm_serial_label');
+            const machineContainer = document.getElementById('tdm_machine_container');
+            const serialContainer = document.getElementById('tdm_serial_container');
+            const totalPriceContainer = document.getElementById('tdm_total_price_container');
+            const headerRow = document.getElementById('tdmTableHeaderRow');
+
+            const formatDateTimeThai = (dateStr) => {
+                if (!dateStr) return '-';
+                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
+                const parts = normalized.split(' ');
+                const datePart = parts[0];
+                const timePart = parts[1] || '';
+
+                const dateSplit = datePart.split('-');
+                if (dateSplit.length !== 3) return dateStr;
+
+                const y = dateSplit[0];
+                const m = dateSplit[1];
+                const d = dateSplit[2];
+
+                return `${d}/${m}/${y} ${timePart}`.trim();
+            };
+
+            document.getElementById('tdm_date').innerText = formatDateTimeThai(t.date || t.created_at || '');
             document.getElementById('tdm_requester').innerText = t.requester;
             document.getElementById('tdm_department').innerText = t.department;
-            
-            const machine = t.machine_id ? db.machines.find(m => m.id == t.machine_id) : null;
-            const machineText = machine ? (t.machine_id + " : " + machine.name) : (t.machine_id || "ไม่ระบุเครื่องจักร");
-            document.getElementById('tdm_machine').innerText = isRestock ? "-" : machineText;
-            document.getElementById('tdm_serial_number').innerText = isRestock ? "-" : (t.serial_number || "ไม่ระบุ");
             document.getElementById('tdm_note').innerText = t.note || "ไม่มีบันทึกข้อมูลเพิ่มเติม";
-            
-            const isCancelled = t.status === 'Cancelled';
-            const statusEl = document.getElementById('tdm_status');
-            if (isCancelled) {
-                statusEl.className = "text-red-600 font-extrabold text-sm";
-                statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark mr-1"></i> ยกเลิกใบเบิก (คืนสต็อกแล้ว)';
-                document.getElementById('tdmCancelBtn').classList.add('hidden');
-            } else if (isRestock) {
-                statusEl.className = "text-blue-600 font-extrabold text-sm";
-                statusEl.innerHTML = '<i class="fa-solid fa-boxes-stacked mr-1"></i> เติมสต็อกสำเร็จ';
-                document.getElementById('tdmCancelBtn').classList.add('hidden');
-            } else {
-                statusEl.className = "text-green-600 font-extrabold text-sm";
-                statusEl.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i> ทำรายการสำเร็จ';
+
+            if (isRestock) {
+                document.getElementById('tdm_id_subtitle').innerText = (t.machine_id === 'PO_RECEIVE' ? "เลขที่ใบรับเข้า (PO): " : "เลขที่ใบรับเข้า (Manual): ") + t.id;
+                if (titleEl) titleEl.innerHTML = '<i class="fa-solid fa-boxes-stacked text-emerald-500 mr-2"></i>ใบรับเข้าสินค้า';
+                if (statusLabelEl) statusLabelEl.innerText = "สถานะการรับเข้า:";
+                if (requesterLabelEl) requesterLabelEl.innerText = "พนักงานผู้ทำรายการ:";
+                if (departmentLabelEl) departmentLabelEl.innerText = "สังกัดฝ่าย/แผนก:";
                 
-                if (isLoggedIn) {
-                    const canCancel = isLoggedIn && (currentUser.role === 'ADMIN' || currentUser.role === 'Manager');
-                    if (canCancel) {
-                        document.getElementById('tdmCancelBtn').classList.remove('hidden');
-                        document.getElementById('tdmCancelBtn').onclick = () => requestCancelTransaction(t.id);
-                    } else {
+                let poNum = "";
+                if (t.note && t.note.startsWith("รับสินค้าจาก PO ")) {
+                    poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                } else if (t.note && t.note.startsWith("รับสินค้าfrom PO ")) {
+                    poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                }
+
+                const po = poNum ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === poNum) : null) : null;
+                
+                if (machineLabelEl) machineLabelEl.innerText = "เลขที่ PO:";
+                document.getElementById('tdm_machine').innerText = poNum || "-";
+                
+                if (serialLabelEl) serialLabelEl.innerText = "เลขที่ PR:";
+                document.getElementById('tdm_serial_number').innerText = (po && po.prNumber) ? po.prNumber : "-";
+                
+                if (machineContainer) machineContainer.classList.remove('hidden');
+                if (serialContainer) serialContainer.classList.remove('hidden');
+                if (totalPriceContainer) totalPriceContainer.classList.add('hidden');
+                
+                const statusEl = document.getElementById('tdm_status');
+                if (statusEl) {
+                    statusEl.className = "text-emerald-600 font-extrabold text-sm";
+                    statusEl.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i> รับเข้าคลังสำเร็จ';
+                }
+                document.getElementById('tdmCancelBtn').classList.add('hidden');
+                const printBtn = document.getElementById('tdmPrintBtn');
+                if (printBtn) {
+                    printBtn.classList.remove('hidden');
+                    printBtn.innerHTML = '<i class="fa-solid fa-print"></i> พิมพ์ใบรับเข้าสินค้า';
+                    printBtn.onclick = () => printPOSSlip(t);
+                }
+                
+                if (headerRow) {
+                    headerRow.innerHTML = `
+                        <th class="p-3 font-medium">รหัสสินค้า</th>
+                        <th class="p-3 font-medium">ชื่อรายการสินค้า</th>
+                        <th class="p-3 font-medium text-right">จำนวนที่สั่งซื้อ</th>
+                        <th class="p-3 font-medium text-right">จำนวนที่นับ</th>
+                        <th class="p-3 font-medium text-right">จำนวนค้างรับ</th>
+                    `;
+                }
+            } else {
+                document.getElementById('tdm_id_subtitle').innerText = (isCancelled ? "เลขที่ใบเบิก (ยกเลิก): " : "เลขที่ใบเบิก: ") + t.id;
+                if (titleEl) titleEl.innerHTML = '<i class="fa-solid fa-receipt text-blue-500 mr-2"></i>รายละเอียดใบเบิกจ่าย';
+                if (statusLabelEl) statusLabelEl.innerText = "สถานะใบเบิก:";
+                if (requesterLabelEl) requesterLabelEl.innerText = "พนักงานผู้ขอเบิก:";
+                if (departmentLabelEl) departmentLabelEl.innerText = "สังกัดฝ่าย/แผนก:";
+                
+                const machine = t.machine_id ? db.machines.find(m => m.id == t.machine_id) : null;
+                const machineText = machine ? (t.machine_id + " : " + machine.name) : (t.machine_id || "ไม่ระบุเครื่องจักร");
+                
+                if (machineLabelEl) machineLabelEl.innerText = "ใช้งานสำหรับเครื่องจักร:";
+                document.getElementById('tdm_machine').innerText = machineText;
+                
+                if (serialLabelEl) serialLabelEl.innerText = "Serial Number:";
+                document.getElementById('tdm_serial_number').innerText = t.serial_number || "ไม่ระบุ";
+                
+                if (machineContainer) machineContainer.classList.remove('hidden');
+                if (serialContainer) serialContainer.classList.remove('hidden');
+                if (totalPriceContainer) totalPriceContainer.classList.remove('hidden');
+                
+                const statusEl = document.getElementById('tdm_status');
+                if (statusEl) {
+                    if (isCancelled) {
+                        statusEl.className = "text-red-600 font-extrabold text-sm";
+                        statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark mr-1"></i> ยกเลิกใบเบิก (คืนสต็อกแล้ว)';
                         document.getElementById('tdmCancelBtn').classList.add('hidden');
+                    } else {
+                        statusEl.className = "text-green-600 font-extrabold text-sm";
+                        statusEl.innerHTML = '<i class="fa-solid fa-circle-check mr-1"></i> ทำรายการสำเร็จ';
+                        
+                        if (isLoggedIn) {
+                            const canCancel = isLoggedIn && (currentUser.role === 'ADMIN' || currentUser.role === 'Manager');
+                            if (canCancel) {
+                                document.getElementById('tdmCancelBtn').classList.remove('hidden');
+                                document.getElementById('tdmCancelBtn').onclick = () => requestCancelTransaction(t.id);
+                            } else {
+                                document.getElementById('tdmCancelBtn').classList.add('hidden');
+                            }
+                        } else {
+                            document.getElementById('tdmCancelBtn').classList.add('hidden');
+                        }
                     }
-                } else {
-                    document.getElementById('tdmCancelBtn').classList.add('hidden');
+                }
+                
+                const printBtn = document.getElementById('tdmPrintBtn');
+                if (printBtn) {
+                    printBtn.classList.remove('hidden');
+                    printBtn.innerHTML = '<i class="fa-solid fa-print"></i> พิมพ์ใบเบิกอะไหล่';
+                    printBtn.onclick = () => printPOSSlip(t);
+                }
+
+                if (headerRow) {
+                    headerRow.innerHTML = `
+                        <th class="p-3 font-medium">รหัสอะไหล่</th>
+                        <th class="p-3 font-medium">ชื่อรายการสินค้า</th>
+                        <th class="p-3 font-medium text-right">จำนวนเบิก</th>
+                        <th class="p-3 font-medium text-right">ราคาต่อหน่วย</th>
+                        <th class="p-3 font-medium text-right">ยอดรวม</th>
+                    `;
                 }
             }
             
@@ -5563,26 +5670,62 @@ function exportReportToExcel() {
             itemsTbody.innerHTML = '';
             
             t.items.forEach(item => {
-                const prodName = db.products.find(p => p.id == item.product_id)?.name || 'ไม่พบชื่อสินค้า';
-                const subtotal = item.qty * item.price;
-                const priceStr = isRestock ? '-' : `฿${item.price.toLocaleString('th-TH', {minimumFractionDigits: 2})}`;
-                const subtotalStr = isRestock ? '-' : `฿${subtotal.toLocaleString('th-TH', {minimumFractionDigits: 2})}`;
-                let tr = `
-                    <tr class="hover:bg-slate-50 border-b border-gray-100 last:border-0">
-                        <td class="p-3 font-mono font-bold text-gray-800">${escapeHTML(item.product_id)}</td>
-                        <td class="p-3 text-gray-600 text-xs">${escapeHTML(prodName)}</td>
-                        <td class="p-3 text-right font-bold text-gray-800">${item.qty}</td>
-                        <td class="p-3 text-right text-gray-500">${priceStr}</td>
-                        <td class="p-3 text-right font-bold text-blue-600">${subtotalStr}</td>
-                    </tr>
-                `;
-                itemsTbody.insertAdjacentHTML('beforeend', tr);
+                const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(item.product_id).trim().toLowerCase()) : null;
+                const prodName = prod ? prod.name : 'ไม่พบชื่อสินค้า';
+                const unit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
+
+                if (isRestock) {
+                    let poNum = "";
+                    if (t.note && t.note.startsWith("รับสินค้าจาก PO ")) {
+                        poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                    } else if (t.note && t.note.startsWith("รับสินค้าfrom PO ")) {
+                        poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                    }
+
+                    const po = poNum ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === poNum) : null) : null;
+                    
+                    let orderedQty = '-';
+                    let pendingQty = '-';
+                    if (t.machine_id === 'PO_RECEIVE' && po) {
+                        orderedQty = `${po.orderedQty} ${unit}`;
+                        const calculatedPending = Math.max(0, (parseFloat(po.orderedQty) || 0) - (parseFloat(po.receivedQty) || 0));
+                        pendingQty = `${calculatedPending} ${unit}`;
+                    } else if (t.machine_id === 'PO_RECEIVE') {
+                        orderedQty = '-';
+                        pendingQty = '-';
+                    } else {
+                        orderedQty = '-';
+                        pendingQty = '0 ' + unit;
+                    }
+
+                    let tr = `
+                        <tr class="hover:bg-slate-50 border-b border-gray-150 last:border-0">
+                            <td class="p-3 font-mono font-bold text-gray-800">${escapeHTML(item.product_id)}</td>
+                            <td class="p-3 text-gray-600 text-xs">${escapeHTML(prodName)}</td>
+                            <td class="p-3 text-right text-gray-600">${orderedQty}</td>
+                            <td class="p-3 text-right font-bold text-gray-800">${item.qty} ${unit}</td>
+                            <td class="p-3 text-right font-bold text-rose-600">${pendingQty}</td>
+                        </tr>
+                    `;
+                    itemsTbody.insertAdjacentHTML('beforeend', tr);
+                } else {
+                    const subtotal = item.qty * item.price;
+                    const priceStr = `฿${item.price.toLocaleString('th-TH', {minimumFractionDigits: 2})}`;
+                    const subtotalStr = `฿${subtotal.toLocaleString('th-TH', {minimumFractionDigits: 2})}`;
+                    let tr = `
+                        <tr class="hover:bg-slate-50 border-b border-gray-150 last:border-0">
+                            <td class="p-3 font-mono font-bold text-gray-800">${escapeHTML(item.product_id)}</td>
+                            <td class="p-3 text-gray-600 text-xs">${escapeHTML(prodName)}</td>
+                            <td class="p-3 text-right font-bold text-gray-800">${item.qty} ${unit}</td>
+                            <td class="p-3 text-right text-gray-500">${priceStr}</td>
+                            <td class="p-3 text-right font-bold text-blue-600">${subtotalStr}</td>
+                        </tr>
+                    `;
+                    itemsTbody.insertAdjacentHTML('beforeend', tr);
+                }
             });
             
             document.getElementById('tdm_total_price').innerText = isRestock ? '-' : '฿' + t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            
-            // พิมพ์ใบเสร็จเบิก
-            document.getElementById('tdmPrintBtn').onclick = () => printPOSSlip(t);
             
             document.getElementById('transactionDetailModal').classList.remove('hidden');
             document.body.style.overflow = 'hidden';
@@ -5642,11 +5785,7 @@ function exportReportToExcel() {
             if (!printWindow) { showToast('กรุณาอนุญาต popup ในเบราว์เซอร์ก่อน', 'error'); return; }
             const doc = printWindow.document;
 
-            const machine = t.machine_id ? db.machines.find(m => m.id == t.machine_id) : null;
             const isRestock = t.status === 'Restock';
-            const machineText = isRestock ? '-' : (machine ? (t.machine_id + " : " + machine.name) : (t.machine_id || "-"));
-            const docTitle = isRestock ? 'ใบนำส่ง/เติมสต็อกอะไหล่' : 'ใบเบิกอะไหล่';
-            const operatorLabel = isRestock ? 'ผู้เติมสต็อก:' : 'ผู้เบิก:';
             const logoUrl = 'https://lh3.googleusercontent.com/d/1kH8HErbms_U0xnoiJ7jlW7r79FK3hXeB'; // โลโก้
             const companyNameTh = 'บริษัท พีรพัฒน์ เทคโนโลยี จำกัด (มหาชน) สำนักงานใหญ่';
             const companyNameEn = 'PEERAPAT TECHNOLOGY PUBLIC COMPANY LIMITED';
@@ -5656,20 +5795,123 @@ function exportReportToExcel() {
             const companyWebsite = 'Web site: https://www.peerapat.com';
             const companyTaxId = 'เลขประจำตัวผู้เสียภาษี 0107551000231';
 
+            const formatDateTimeThai = (dateStr) => {
+                if (!dateStr) return '-';
+                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
+                const parts = normalized.split(' ');
+                const datePart = parts[0];
+                const timePart = parts[1] || '';
+
+                const dateSplit = datePart.split('-');
+                if (dateSplit.length !== 3) return dateStr;
+
+                const y = dateSplit[0];
+                const m = dateSplit[1];
+                const d = dateSplit[2];
+
+                return `${d}/${m}/${y} ${timePart}`.trim();
+            };
+
+            const formattedDate = formatDateTimeThai(t.date || t.created_at || '');
+
+            let poNum = "";
+            if (isRestock) {
+                if (t.note && t.note.startsWith("รับสินค้าจาก PO ")) {
+                    poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                } else if (t.note && t.note.startsWith("รับสินค้าfrom PO ")) {
+                    poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                }
+            }
+            const po = poNum ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === poNum) : null) : null;
+
+            const docTitle = isRestock ? 'ใบรับเข้าสินค้า' : 'ใบเบิกอะไหล่';
+            const operatorLabel = isRestock ? 'พนักงานผู้ทำรายการ:' : 'ผู้เบิก:';
+
             let totalQty = 0;
             let itemsRows = '';
+            let tableHeaderHtml = '';
             let rowNum = 1;
-            t.items.forEach(function(item) {
-                const prod = db.products.find(p => p.id == item.product_id);
-                const prodName = prod ? prod.name : 'ไม่ระบุชื่อสินค้า';
-                const unit = (prod && prod.unit) ? prod.unit : 'UNIT';
-                totalQty += item.qty;
-                itemsRows += '<tr>'
-                    + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;font-size:12px;">' + rowNum++ + '. ' + prodName + '<br><span style="font-size:10px;color:#888;">' + item.product_id + '<\/span><\/td>'
-                    + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:13px;font-weight:bold;">' + item.qty + '<\/td>'
-                    + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;">' + unit + '<\/td>'
+
+            if (isRestock) {
+                tableHeaderHtml = '<tr>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:left;">รหัสสินค้า<\/th>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:left;">ชื่อรายการสินค้า<\/th>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:100px;">จำนวนสั่งซื้อ<\/th>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:100px;">จำนวนที่รับ<\/th>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:100px;">จำนวนค้างรับ<\/th>'
                     + '<\/tr>';
-            });
+
+                t.items.forEach(function(item) {
+                    const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(item.product_id).trim().toLowerCase()) : null;
+                    const prodName = prod ? prod.name : 'ไม่ระบุชื่อสินค้า';
+                    const unit = (prod && prod.unit) ? prod.unit : 'ชิ้น';
+                    totalQty += item.qty;
+
+                    let orderedQty = '-';
+                    let pendingQty = '-';
+                    if (t.machine_id === 'PO_RECEIVE' && po) {
+                        orderedQty = po.orderedQty + ' ' + unit;
+                        const calculatedPending = Math.max(0, (parseFloat(po.orderedQty) || 0) - (parseFloat(po.receivedQty) || 0));
+                        pendingQty = calculatedPending + ' ' + unit;
+                    } else if (t.machine_id === 'PO_RECEIVE') {
+                        orderedQty = '-';
+                        pendingQty = '-';
+                    } else {
+                        orderedQty = '-';
+                        pendingQty = '0 ' + unit;
+                    }
+
+                    itemsRows += '<tr>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;font-size:12px;font-family:monospace;font-weight:bold;">' + item.product_id + '<\/td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;font-size:12px;">' + prodName + '<\/td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;">' + orderedQty + '<\/td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;font-weight:bold;color:#059669;">' + item.qty + ' ' + unit + '<\/td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;font-weight:bold;color:#e11d48;">' + pendingQty + '<\/td>'
+                        + '<\/tr>';
+                });
+            } else {
+                tableHeaderHtml = '<tr>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:left;">รายการ<\/th>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:80px;">จำนวน<\/th>'
+                    + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:70px;">หน่วย<\/th>'
+                    + '<\/tr>';
+
+                t.items.forEach(function(item) {
+                    const prod = db.products.find(p => p.id == item.product_id);
+                    const prodName = prod ? prod.name : 'ไม่ระบุชื่อสินค้า';
+                    const unit = (prod && prod.unit) ? prod.unit : 'UNIT';
+                    totalQty += item.qty;
+                    itemsRows += '<tr>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;font-size:12px;">' + rowNum++ + '. ' + prodName + '<br><span style="font-size:10px;color:#888;">' + item.product_id + '<\/span><\/td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:13px;font-weight:bold;">' + item.qty + '<\/td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;">' + unit + '<\/td>'
+                        + '<\/tr>';
+                });
+            }
+
+            let metaLeftHtml = '';
+            let metaRightHtml = '';
+
+            if (isRestock) {
+                metaLeftHtml = '<div class="meta-row"><span class="meta-label">เลขที่ใบรับเข้า:<\/span> ' + t.id + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">วันที่ทำรายการ:<\/span> ' + formattedDate + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">เลขที่ PO:<\/span> ' + (poNum || '-') + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">เลขที่ PR:<\/span> ' + ((po && po.prNumber) ? po.prNumber : '-') + '<\/div>';
+
+                metaRightHtml = '<div class="meta-row"><span class="meta-label">' + operatorLabel + '<\/span> ' + (t.requester || '-') + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">สังกัดฝ่าย/แผนก:<\/span> ' + (t.department || '-') + '<\/div>';
+            } else {
+                const machine = t.machine_id ? db.machines.find(m => m.id == t.machine_id) : null;
+                const machineText = machine ? (t.machine_id + " : " + machine.name) : (t.machine_id || "-");
+                
+                metaLeftHtml = '<div class="meta-row"><span class="meta-label">เลขที่ใบเบิก:<\/span> ' + t.id + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">วันที่:<\/span> ' + formattedDate + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">เครื่องจักร:<\/span> ' + machineText + '<\/div>';
+
+                metaRightHtml = '<div class="meta-row"><span class="meta-label">' + operatorLabel + '<\/span> ' + (t.requester || '-') + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">แผนก:<\/span> ' + (t.department || '-') + '<\/div>'
+                    + '<div class="meta-row"><span class="meta-label">Serial Number:<\/span> ' + (t.serial_number || '-') + '<\/div>';
+            }
 
             const css = '* { margin:0; padding:0; box-sizing:border-box; }'
                 + '@page { size:A4 portrait; margin: 5mm; }'
@@ -5707,11 +5949,10 @@ function exportReportToExcel() {
                 + '.print-toolbar { display:flex; justify-content:flex-end; padding:10px 0; }'
                 + '.print-toolbar button { padding:8px 20px; background:#1d4ed8; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; }'
                 + '@media print { .print-toolbar { display:none; } .watermark { position:fixed; } }';
-                + '@media print { .watermark { position:fixed; } }';
 
             const html = '<!DOCTYPE html>'
                 + '<html lang="th"><head><meta charset="UTF-8">'
-                + '<title>ใบเบิกอะไหล่ - ' + t.id + '<\/title>'
+                + '<title>' + docTitle + ' - ' + t.id + '<\/title>'
                 + '<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">'
                 + '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"><\/script>'
                 + '<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script>'
@@ -5721,7 +5962,7 @@ function exportReportToExcel() {
                 + '<img class="watermark" src="' + logoUrl + '" alt="">'
                 + '<div class="print-toolbar">'
                 + '<button onclick="exportPDF()" style="margin-right:10px;background:#16a34a;">&#128196; บันทึกเป็น PDF<\/button>'
-                + '<button onclick="window.print()">&#128424; พิมพ์ใบเบิกอะไหล่<\/button>'
+                + '<button onclick="window.print()">&#128424; พิมพ์' + docTitle + '<\/button>'
                 + '<\/div>'
                 + '<script>'
                 + 'async function exportPDF(){'
@@ -5750,53 +5991,41 @@ function exportReportToExcel() {
                 + '    y+=sh;'
                 + '   }'
                 + '  }'
-                + '  pdf.save("ใบเบิกอะไหล่-' + t.id + '.pdf");'
+                + '  pdf.save("' + docTitle + '-' + t.id + '.pdf");'
                 + ' }catch(e){alert("เกิดข้อผิดพลาด: "+e.message);}'
                 + ' var b2=document.querySelectorAll(".print-toolbar button");'
                 + ' b2.forEach(function(b){b.disabled=false;b.style.opacity="1";});'
                 + '}'
                 + '<\/script>'
                 + '<div id="print-body"><div class="page-wrapper">'
-                    + '<div class="content-grow">'
-                        + '<div class="doc-header">'
-                            + '<div class="logo-block"><img src="' + logoUrl + '" alt="Logo" onerror="this.style.display=\'none\'"><\/div>'
-                            + '<div class="company-block">'
-                                + '<div class="company-name-th">' + companyNameTh + '<\/div>'
-                                + '<div class="company-name-en">' + companyNameEn + '<\/div>'
-                                + '<div class="company-address">'
-                                    + '<div>' + companyAddressTh + '<\/div>'
-                                    + '<div>' + companyContact + ' &nbsp;|&nbsp; ' + companyWebsite + ' &nbsp;|&nbsp; ' + companyTaxId + '<\/div>'
-                                + '<\/div>'
-                            + '<\/div>'
-                            + '<div style="flex:0 0 130px;"><\/div>'
-                        + '<\/div>'
-                        + '<div class="doc-title-bar">' + docTitle + '<\/div>'
-                        + '<div class="meta-grid">'
-                            + '<div class="meta-left">'
-                                + '<div class="meta-row"><span class="meta-label">' + (isRestock ? "เลขที่ใบเติมสต็อก:" : "เลขที่ใบเบิก:") + '<\/span> ' + t.id + '<\/div>'
-                                + '<div class="meta-row"><span class="meta-label">วันที่:<\/span> ' + t.date + '<\/div>'
-                                + '<div class="meta-row"><span class="meta-label">เครื่องจักร:<\/span> ' + machineText + '<\/div>'
-                            + '<\/div>'
-                            + '<div class="meta-right">'
-                                + '<div class="meta-row"><span class="meta-label">' + operatorLabel + '<\/span> ' + (t.requester || '-') + '<\/div>'
-                                + '<div class="meta-row"><span class="meta-label">แผนก:<\/span> ' + (t.department || '-') + '<\/div>'
-                                + '<div class="meta-row"><span class="meta-label">Serial Number:<\/span> ' + (isRestock ? '-' : (t.serial_number || '-')) + '<\/div>'
-                            + '<\/div>'
-                        + '<\/div>'
-                        + '<div class="purpose-bar"><span class="meta-label">' + (isRestock ? "หมายเหตุการเติมสต็อก:" : "วัตถุประสงค์การเบิก:") + '<\/span> ' + (t.note || '-') + '<\/div>'
-                        + '<table class="items-table">'
-                            + '<thead><tr>'
-                                + '<th>รายการ<\/th>'
-                                + '<th style="width:80px;text-align:right;">จำนวน<\/th>'
-                                + '<th style="width:70px;text-align:right;">หน่วย<\/th>'
-                            + '<\/tr><\/thead>'
-                            + '<tbody>' + itemsRows + '<\/tbody>'
-                        + '<\/table>'
-                    + '<\/div>'
-                    + '<div class="sig-zone">'
-                        + '<div class="sig-col"><div class="sig-line">ลงชื่อ ...............................<\/div><div class="sig-name">(ผู้ขอ/จ่ายของสโตร์)<\/div><\/div>'
-                        + '<div class="sig-col"><div class="sig-line">ลงชื่อ ...............................<\/div><div class="sig-name">(ผู้รับมอบ)<\/div><div class="sig-name">ผู้บันทึก<\/div><\/div>'
-                    + '<\/div>'
+                + '<div class="content-grow">'
+                + '<div class="doc-header">'
+                + '<div class="logo-block"><img src="' + logoUrl + '" alt="Logo" onerror="this.style.display=\'none\'"><\/div>'
+                + '<div class="company-block">'
+                + '<div class="company-name-th">' + companyNameTh + '<\/div>'
+                + '<div class="company-name-en">' + companyNameEn + '<\/div>'
+                + '<div class="company-address">'
+                + '<div>' + companyAddressTh + '<\/div>'
+                + '<div>' + companyContact + ' &nbsp;|&nbsp; ' + companyWebsite + ' &nbsp;|&nbsp; ' + companyTaxId + '<\/div>'
+                + '<\/div>'
+                + '<\/div>'
+                + '<div style="flex:0 0 130px;"><\/div>'
+                + '<\/div>'
+                + '<div class="doc-title-bar">' + docTitle + '<\/div>'
+                + '<div class="meta-grid">'
+                + '<div class="meta-left">' + metaLeftHtml + '<\/div>'
+                + '<div class="meta-right">' + metaRightHtml + '<\/div>'
+                + '<\/div>'
+                + '<div class="purpose-bar"><span class="meta-label">' + (isRestock ? "หมายเหตุการรับเข้า:" : "วัตถุประสงค์การเบิก:") + '<\/span> ' + (t.note || '-') + '<\/div>'
+                + '<table class="items-table">'
+                + '<thead>' + tableHeaderHtml + '<\/thead>'
+                + '<tbody>' + itemsRows + '<\/tbody>'
+                + '<\/table>'
+                + '<\/div>'
+                + '<div class="sig-zone">'
+                + '<div class="sig-col"><div class="sig-line">ลงชื่อ ...............................<\/div><div class="sig-name">' + (isRestock ? "(ผู้ทำรายการรับเข้า)" : "(ผู้ขอ/จ่ายของสโตร์)") + '<\/div><\/div>'
+                + '<div class="sig-col"><div class="sig-line">ลงชื่อ ...............................<\/div><div class="sig-name">' + (isRestock ? "(ผู้ส่งมอบ/ผู้ตรวจสอบ)" : "(ผู้รับมอบ)") + '<\/div><div class="sig-name">ผู้บันทึก<\/div><\/div>'
+                + '<\/div>'
                 + '<\/div>'
                 + '<\/div>'
                 + '<\/body><\/html>';
@@ -6577,42 +6806,74 @@ function exportReportToExcel() {
 
                 htmlContent = `
                     <div class="space-y-6">
-                        <!-- Search and Filter Row -->
-                        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                            <!-- Left Filters -->
-                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-wrap">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold text-slate-500">ประเภทอะไหล่:</span>
-                                    <select onchange="handleHistoryCategoryFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
-                                        <option value="">ทั้งหมด</option>
-                                        ${categoryOptions}
-                                    </select>
+                        <!-- Tabs for switching between Purchase Order History and Receive-in History -->
+                        <div class="flex bg-slate-100 p-1 rounded-xl w-max border border-slate-200">
+                            <button onclick="setPurchaseHistoryTab('po-history')" id="tab-history-po" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/55">
+                                ประวัติใบสั่งซื้อ (PO)
+                            </button>
+                            <button onclick="setPurchaseHistoryTab('receive-history')" id="tab-history-receive" class="px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800">
+                                ประวัติการรับเข้าคลัง
+                            </button>
+                        </div>
+
+                        <!-- Purchase Orders History View -->
+                        <div id="view-history-po-section" class="space-y-6">
+                            <!-- Search and Filter Row -->
+                            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                <!-- Left Filters -->
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-wrap">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-semibold text-slate-500">ประเภทอะไหล่:</span>
+                                        <select onchange="handleHistoryCategoryFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
+                                            <option value="">ทั้งหมด</option>
+                                            ${categoryOptions}
+                                        </select>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-semibold text-slate-500">กลุ่มสินค้า:</span>
+                                        <select onchange="handleHistoryGroupFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
+                                            <option value="">ทั้งหมด</option>
+                                            ${groupOptions}
+                                        </select>
+                                    </div>
+                                    ${isAdmin ? `
+                                    <button onclick="deleteAllPurchaseHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                        <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
+                                    </button>
+                                    ` : ''}
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-semibold text-slate-500">กลุ่มสินค้า:</span>
-                                    <select onchange="handleHistoryGroupFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
-                                        <option value="">ทั้งหมด</option>
-                                        ${groupOptions}
-                                    </select>
+                                <!-- Right Search -->
+                                <div class="relative max-w-sm w-full lg:w-80">
+                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                        <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                    </span>
+                                    <input type="text" onkeyup="handleHistorySearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา PO, PR, รหัสสินค้า, ชื่อสินค้า...">
                                 </div>
-                                ${isAdmin ? `
-                                <button onclick="deleteAllPurchaseHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
-                                    <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
-                                </button>
-                                ` : ''}
                             </div>
-                            <!-- Right Search -->
-                            <div class="relative max-w-sm w-full lg:w-80">
-                                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                                    <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
-                                </span>
-                                <input type="text" onkeyup="handleHistorySearch(this.value)" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา PO, PR, รหัสสินค้า, ชื่อสินค้า...">
+
+                            <!-- Cards Container -->
+                            <div id="purchaseHistoryCardsContainer" class="space-y-4">
+                                <!-- Cards rendered dynamically -->
                             </div>
                         </div>
 
-                        <!-- Cards Container -->
-                        <div id="purchaseHistoryCardsContainer" class="space-y-4">
-                            <!-- Cards rendered dynamically -->
+                        <!-- Receive-in History View -->
+                        <div id="view-history-receive-section" class="space-y-6 hidden">
+                            <!-- Search & Filter Row for Receiving -->
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <!-- Search Field -->
+                                <div class="relative max-w-sm w-full sm:w-80">
+                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                                        <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
+                                    </span>
+                                    <input type="text" id="searchReceiveHistoryInput" onkeyup="renderReceiveHistoryTable()" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา รหัสใบรับ, ผู้รับ, หมายเหตุ...">
+                                </div>
+                            </div>
+
+                            <!-- Receiving History Cards Container -->
+                            <div id="receiveHistoryCardsContainer" class="space-y-4">
+                                <!-- Cards rendered dynamically -->
+                            </div>
                         </div>
                     </div>
                 `;
@@ -6621,7 +6882,7 @@ function exportReportToExcel() {
                     purchaseHistorySearchQuery = '';
                     purchaseHistoryCategoryFilter = '';
                     purchaseHistoryGroupFilter = '';
-                    renderPurchaseHistoryCards();
+                    setPurchaseHistoryTab('po-history');
                 }, 50);
             } else if (key === 'overview') {
                 desc = "ภาพรวมงบประมาณจัดซื้อและสถิติยอดซื้อ";
@@ -8414,6 +8675,298 @@ function exportReportToExcel() {
                 container.insertAdjacentHTML('beforeend', cardHtml);
             });
         }
+
+        window.setPurchaseHistoryTab = function(tab) {
+            const btnPo = document.getElementById('tab-history-po');
+            const btnReceive = document.getElementById('tab-history-receive');
+            const secPo = document.getElementById('view-history-po-section');
+            const secReceive = document.getElementById('view-history-receive-section');
+
+            if (!btnPo || !btnReceive || !secPo || !secReceive) return;
+
+            if (tab === 'po-history') {
+                btnPo.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/55";
+                btnReceive.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800";
+                secPo.classList.remove('hidden');
+                secReceive.classList.add('hidden');
+                renderPurchaseHistoryCards();
+            } else {
+                btnReceive.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-slate-800 shadow-sm border border-slate-200/55";
+                btnPo.className = "px-4 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800";
+                secReceive.classList.remove('hidden');
+                secPo.classList.add('hidden');
+                renderReceiveHistoryTable();
+            }
+        };
+
+        window.renderReceiveHistoryTable = async function() {
+            const container = document.getElementById('receiveHistoryCardsContainer');
+            if (!container) return;
+
+            if (!transactions || transactions.length === 0) {
+                showLoading('กำลังโหลดประวัติการรับเข้า...');
+                try {
+                    let transRes = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getTransactions' }) });
+                    let result = await transRes.json();
+                    if (result.status === 'success') {
+                        transactions = result.data || [];
+                    }
+                } catch (e) {
+                    showToast('ไม่สามารถดึงข้อมูลประวัติจากเครือข่ายได้', 'error');
+                }
+                hideLoading();
+            }
+
+            const searchInput = document.getElementById('searchReceiveHistoryInput');
+            const searchKeyword = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+            container.innerHTML = '';
+
+            // Filter for Restock transactions (Receive and Restock)
+            let receiveTx = transactions.filter(t => t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK');
+
+            // Group transactions by PO Number (if PO_RECEIVE) or by Transaction ID (if RESTOCK)
+            const grouped = {};
+            receiveTx.forEach(t => {
+                let groupKey = "";
+                let poNum = "";
+                if (t.machine_id === 'PO_RECEIVE') {
+                    if (t.note && t.note.startsWith("รับสินค้าจาก PO ")) {
+                        poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                    } else if (t.note && t.note.startsWith("รับสินค้าfrom PO ")) {
+                        poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                    }
+                }
+                
+                if (poNum) {
+                    groupKey = "PO:" + poNum;
+                } else {
+                    groupKey = "TX:" + t.id; // Manual restocks grouped individually
+                }
+
+                if (!grouped[groupKey]) {
+                    grouped[groupKey] = {
+                        poNumber: poNum,
+                        txId: t.id,
+                        isPo: !!poNum,
+                        transactions: [],
+                        totalQty: 0,
+                        latestDate: ''
+                    };
+                }
+                grouped[groupKey].transactions.push(t);
+                
+                // Sum the quantity in this transaction
+                let tQty = 0;
+                if (t.items && t.items.length > 0) {
+                    t.items.forEach(item => {
+                        tQty += parseFloat(item.qty) || 0;
+                    });
+                }
+                grouped[groupKey].totalQty += tQty;
+
+                const d = t.date || t.created_at || '';
+                if (d > grouped[groupKey].latestDate) {
+                    grouped[groupKey].latestDate = d;
+                }
+            });
+
+            // Convert grouped object to array and sort by latestDate descending
+            let receiveGroups = Object.values(grouped);
+            receiveGroups.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
+
+            // Apply search filter
+            if (searchKeyword) {
+                receiveGroups = receiveGroups.filter(g => {
+                    if (g.poNumber && g.poNumber.toLowerCase().includes(searchKeyword)) return true;
+                    if (g.txId.toLowerCase().includes(searchKeyword)) return true;
+                    return g.transactions.some(t => {
+                        const noteText = (t.note || '').toLowerCase();
+                        const reqText = (t.requester || '').toLowerCase();
+                        let prodMatch = false;
+                        if (t.items && t.items.length > 0) {
+                            t.items.forEach(item => {
+                                const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(item.product_id).trim().toLowerCase()) : null;
+                                if (prod && prod.name.toLowerCase().includes(searchKeyword)) {
+                                    prodMatch = true;
+                                }
+                            });
+                        }
+                        return noteText.includes(searchKeyword) || reqText.includes(searchKeyword) || prodMatch;
+                    });
+                });
+            }
+
+            if (receiveGroups.length === 0) {
+                container.innerHTML = `
+                    <div class="border border-slate-150 rounded-2xl p-8 bg-slate-50/50 flex flex-col items-center justify-center text-center py-12">
+                        <i class="fa-solid fa-boxes-stacked text-slate-300 text-4xl mb-3"></i>
+                        <p class="text-sm font-bold text-slate-600">ไม่พบประวัติการรับเข้า</p>
+                        <p class="text-xs text-slate-400 mt-1">ไม่มีข้อมูลประวัติการรับเข้าคลังที่ตรงกับเงื่อนไขการค้นหา</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const formatDateTimeThai = (dateStr) => {
+                if (!dateStr) return '-';
+                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
+                const parts = normalized.split(' ');
+                const datePart = parts[0];
+                const timePart = parts[1] || '';
+
+                const dateSplit = datePart.split('-');
+                if (dateSplit.length !== 3) return dateStr;
+
+                const y = dateSplit[0];
+                const m = dateSplit[1];
+                const d = dateSplit[2];
+
+                return `${d}/${m}/${y} ${timePart}`.trim();
+            };
+
+            receiveGroups.forEach((g, index) => {
+                let productName = 'ไม่พบชื่อสินค้า';
+                let productId = '';
+                let unit = 'ชิ้น';
+                const firstTx = g.transactions[0];
+                const firstItem = firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                
+                if (firstItem) {
+                    productId = firstItem.product_id;
+                    const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                    if (prod) {
+                        productName = prod.name;
+                        unit = prod.unit || 'ชิ้น';
+                    }
+                }
+
+                const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                if (po) {
+                    productName = po.productName;
+                    productId = po.productId;
+                }
+
+                let pendingQty = 0;
+                if (g.isPo && po) {
+                    pendingQty = Math.max(0, (parseFloat(po.orderedQty) || 0) - (parseFloat(po.receivedQty) || 0));
+                }
+
+                let statusHtml = '';
+                if (g.isPo) {
+                    if (pendingQty > 0) {
+                        statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">ค้างรับ (${pendingQty} ${unit})</span>`;
+                    } else {
+                        statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">รับครบ</span>`;
+                    }
+                } else {
+                    statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">รับครบ</span>`;
+                }
+
+                // Sort transactions within the group by date descending (latest first)
+                g.transactions.sort((a, b) => {
+                    const dateA = a.date || a.created_at || '';
+                    const dateB = b.date || b.created_at || '';
+                    return dateB.localeCompare(dateA);
+                });
+
+                let rowsHtml = g.transactions.map((t, idx) => {
+                    let tQty = 0;
+                    if (t.items && t.items.length > 0) {
+                        t.items.forEach(item => {
+                            tQty += parseFloat(item.qty) || 0;
+                        });
+                    }
+
+                    const formattedDate = formatDateTimeThai(t.date || t.created_at || '');
+
+                    return `
+                        <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 text-xs">
+                            <td class="p-3 text-center text-gray-500">${idx + 1}</td>
+                            <td class="p-3 font-bold text-gray-900">${escapeHTML(t.id)}</td>
+                            <td class="p-3 text-gray-500 text-xs font-mono">${escapeHTML(formattedDate)}</td>
+                            <td class="p-3 text-gray-700 font-semibold">${escapeHTML(t.requester)} <span class="text-[10px] text-slate-400 font-normal">(${escapeHTML(t.department)})</span></td>
+                            <td class="p-3 font-bold text-slate-800">${tQty} ${unit}</td>
+                            <td class="p-3 text-center">
+                                <button onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm inline-flex items-center gap-1" title="ดูรายละเอียดการรับเข้า"><i class="fa-solid fa-eye"></i> รายละเอียด</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const cardId = `receive-card-${index}`;
+                const detailId = `receive-detail-${index}`;
+                const arrowId = `receive-arrow-${index}`;
+
+                let statsHtml = '';
+                if (g.isPo && po) {
+                    statsHtml = `
+                        <div class="text-right hidden sm:block">
+                            <span class="text-[10px] text-slate-400 block font-semibold uppercase">จำนวนที่สั่ง</span>
+                            <span class="font-bold text-slate-800 text-sm">${po.orderedQty} ${unit}</span>
+                        </div>
+                    `;
+                }
+                statsHtml += `
+                    <div class="text-right">
+                        <span class="text-[10px] text-slate-400 block font-semibold uppercase">รับเข้าคลังแล้ว</span>
+                        <span class="font-extrabold text-emerald-600 text-sm">${g.totalQty} ${unit}</span>
+                    </div>
+                `;
+
+                const cardHtml = `
+                    <div class="bg-white border border-slate-150 rounded-2xl shadow-sm hover:shadow-md transition overflow-hidden">
+                        <!-- Card Header (Clickable) -->
+                        <div onclick="toggleHistoryCardDetail('${detailId}', '${arrowId}')" class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition duration-150 select-none">
+                            <div class="flex items-start gap-4 text-left">
+                                <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
+                                    <i class="fa-solid fa-boxes-stacked text-base"></i>
+                                </div>
+                                <div class="text-left flex-1 min-w-0">
+                                    <span class="inline-block px-2.5 py-0.5 bg-slate-100 text-slate-600 font-bold rounded-lg text-[10px] font-mono mb-1">
+                                        ${g.isPo ? `PO: ${escapeHTML(g.poNumber)}` : `Manual: ${escapeHTML(g.txId)}`}
+                                    </span>
+                                    <h4 class="text-sm font-bold text-slate-800 leading-tight truncate">${escapeHTML(productName)}</h4>
+                                    <span class="text-[10px] text-slate-400 block mt-0.5">รหัสสินค้า: ${escapeHTML(productId)}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-6">
+                                ${statsHtml}
+                                <div class="min-w-[80px] text-center">
+                                    ${statusHtml}
+                                </div>
+                                <button class="text-slate-400 hover:text-slate-600 transition">
+                                    <i id="${arrowId}" class="fa-solid fa-chevron-down transform transition-transform duration-200"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Card Expandable Detail Section -->
+                        <div id="${detailId}" class="hidden border-t border-slate-150 bg-slate-50/40 transition-all duration-300">
+                            <div class="p-4 overflow-x-auto w-full table-scroll">
+                                <table class="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr class="border-b border-slate-200 text-slate-500 font-bold bg-slate-100/50">
+                                            <th class="p-3 text-center" style="width: 60px;">ลำดับ</th>
+                                            <th class="p-3">เลขที่ใบรับเข้า</th>
+                                            <th class="p-3">วันที่ทำรายการ</th>
+                                            <th class="p-3">ผู้รับเข้า (แผนก)</th>
+                                            <th class="p-3">จำนวนรับเข้า</th>
+                                            <th class="p-3 text-center" style="width: 120px;">จัดการ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100 bg-white">
+                                        ${rowsHtml}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            });
+        };
 
         window.toggleHistoryCardDetail = function(detailId, arrowId) {
             const detailEl = document.getElementById(detailId);

@@ -2263,7 +2263,7 @@
                     <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl transform transition-all my-auto max-h-[90vh] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
                         <div class="flex justify-between items-center p-6 border-b border-gray-100 flex-shrink-0">
                             <div>
-                                <h3 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-receipt text-blue-500 mr-2"></i>รายละเอียดใบเบิกจ่าย</h3>
+                                <h3 class="text-xl font-bold text-slate-800" id="tdm_title_main"><i class="fa-solid fa-receipt text-blue-500 mr-2"></i>รายละเอียดใบเบิกจ่าย</h3>
                                 <p class="text-xs text-gray-500 mt-0.5" id="tdm_id_subtitle">เลขที่ใบเบิก: LDT-XXXXXX</p>
                             </div>
                             <button onclick="closeTransactionDetailModal()" class="text-gray-400 hover:text-red-500 transition p-2 rounded-lg hover:bg-red-50">
@@ -2279,23 +2279,23 @@
                                     <p id="tdm_date" class="font-bold text-gray-700"></p>
                                 </div>
                                 <div>
-                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">สถานะใบเบิก:</p>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_status_label">สถานะใบเบิก:</p>
                                     <p id="tdm_status" class="font-bold"></p>
                                 </div>
                                 <div>
-                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">พนักงานผู้ขอเบิก:</p>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_requester_label">พนักงานผู้ขอเบิก:</p>
                                     <p id="tdm_requester" class="font-bold text-gray-700"></p>
                                 </div>
                                 <div>
-                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">สังกัดฝ่าย/แผนก:</p>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_department_label">สังกัดฝ่าย/แผนก:</p>
                                     <p id="tdm_department" class="font-bold text-gray-700"></p>
                                 </div>
-                                <div>
-                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">ใช้งานสำหรับเครื่องจักร:</p>
+                                <div id="tdm_machine_container">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_machine_label">ใช้งานสำหรับเครื่องจักร:</p>
                                     <p id="tdm_machine" class="font-bold text-gray-700"></p>
                                 </div>
-                                <div>
-                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">Serial Number:</p>
+                                <div id="tdm_serial_container">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_serial_label">Serial Number:</p>
                                     <p id="tdm_serial_number" class="font-bold text-gray-700"></p>
                                 </div>
                                 <div class="col-span-1 sm:col-span-2">
@@ -2309,7 +2309,7 @@
                                 <div class="overflow-x-auto w-full table-scroll">
                                     <table class="min-w-full text-left text-xs whitespace-nowrap">
                                         <thead class="bg-slate-800 text-white">
-                                            <tr>
+                                            <tr id="tdmTableHeaderRow">
                                                 <th class="p-3 font-medium">รหัสอะไหล่</th>
                                                 <th class="p-3 font-medium">ชื่อรายการสินค้า</th>
                                                 <th class="p-3 font-medium text-right">จำนวนเบิก</th>
@@ -2325,7 +2325,7 @@
                             </div>
                             
                             <!-- มูลค่ารวมสุทธิ -->
-                            <div class="flex justify-between items-center bg-blue-50 border border-blue-100 p-4 rounded-xl">
+                            <div id="tdm_total_price_container" class="flex justify-between items-center bg-blue-50 border border-blue-100 p-4 rounded-xl">
                                 <span class="text-sm font-bold text-blue-800">มูลค่ารวมใบเบิกสุทธิ:</span>
                                 <span id="tdm_total_price" class="text-xl font-extrabold text-blue-700">฿0.00</span>
                             </div>
