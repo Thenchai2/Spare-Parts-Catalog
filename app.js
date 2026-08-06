@@ -1,7 +1,38 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbx2Y9ySye3CfrwPjr3WiVrYLAKwTj0YlSqiObr94h_L0SagMvxZ7sYTHVVk-jYUDyiLig/exec';
 const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app/.json';
         
-        let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
+        
+window.formatDateTimeThai = function(dateStr) {
+    if (!dateStr) return '-';
+    let str = String(dateStr).trim();
+    if (!str || str === '-') return '-';
+
+    str = str.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '');
+    const parts = str.split(' ');
+    const datePart = parts[0];
+    const timePart = parts[1] || '';
+
+    if (datePart.includes('-')) {
+        const dSplit = datePart.split('-');
+        if (dSplit.length === 3 && dSplit[0].length === 4) {
+            const y = dSplit[0];
+            const m = dSplit[1];
+            const d = dSplit[2];
+            return `${d}/${m}/${y}${timePart ? ' ' + timePart : ''}`.trim();
+        }
+    } else if (datePart.includes('/')) {
+        const dSplit = datePart.split('/');
+        if (dSplit.length === 3 && dSplit[0].length === 4) {
+            const y = dSplit[0];
+            const m = dSplit[1];
+            const d = dSplit[2];
+            return `${d}/${m}/${y}${timePart ? ' ' + timePart : ''}`.trim();
+        }
+    }
+    return str;
+};
+
+let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
         let isShowCostInCatalog = false;
         let isShowPriceBForGuest = false;
         let isShowPriceCForGuest = false;
@@ -5146,7 +5177,7 @@ function exportRestockHistoryToExcel() {
                     <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 ${isCancelled ? 'bg-red-50/10' : ''}">
                         <td class="p-4 text-center text-gray-500">${globalIndex}</td>
                         <td class="p-4 font-bold text-gray-900">${escapeHTML(t.id)}</td>
-                        <td class="p-4 text-gray-500 text-xs font-semibold">${escapeHTML(t.date)}</td>
+                        <td class="p-4 text-gray-500 text-xs font-semibold">${escapeHTML(formatDateTimeThai(t.date))}</td>
                         <td class="p-4 text-gray-700 font-semibold">${escapeHTML(t.requester)}</td>
                         <td class="p-4 text-gray-600">${escapeHTML(t.department)}</td>
                         <td class="p-4 text-gray-500 font-medium">${escapeHTML(t.machine_id)}</td>
@@ -7357,9 +7388,9 @@ function exportReportToExcel() {
                         <td class="p-4 text-slate-600 font-mono">${escapeHTML(o.prNumber)}</td>
                         <td class="p-4 text-slate-500 font-mono text-[11px]">${escapeHTML(o.productId)}</td>
                         <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
-                        <td class="p-4 text-center text-slate-500">${escapeHTML(o.orderDate)}</td>
+                        <td class="p-4 text-center text-slate-500">${escapeHTML(formatDateTimeThai(o.orderDate))}</td>
                         <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
-                        <td class="p-4 text-center text-slate-500">${o.lastReceivedDate ? escapeHTML(o.lastReceivedDate) : '-'}</td>
+                        <td class="p-4 text-center text-slate-500">${o.lastReceivedDate ? escapeHTML(formatDateTimeThai(o.lastReceivedDate)) : '-'}</td>
                         <td class="p-4 text-center font-bold text-emerald-600">${o.receivedQty}</td>
                         <td class="p-4 text-center font-extrabold text-rose-600 bg-rose-50/30">${pendingQty}</td>
                         <td class="p-4 text-center">
@@ -7453,7 +7484,7 @@ function exportReportToExcel() {
                         <td class="p-4 text-slate-600 font-mono">${escapeHTML(o.prNumber)}</td>
                         <td class="p-4 text-slate-500 font-mono text-[11px]">${escapeHTML(o.productId)}</td>
                         <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
-                        <td class="p-4 text-center text-slate-500">${escapeHTML(o.orderDate)}</td>
+                        <td class="p-4 text-center text-slate-500">${escapeHTML(formatDateTimeThai(o.orderDate))}</td>
                         <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
                         <td class="p-4 text-center">
                             <span class="inline-block px-2.5 py-0.5 text-[10px] font-bold rounded-md uppercase ${badgeColor}">
@@ -8412,7 +8443,7 @@ function exportReportToExcel() {
 
             // Helper to render a single row
             function renderRow(o) {
-                const dateStr = o.orderDate || '-';
+                const dateStr = formatDateTimeThai(o.orderDate);
                 const displayPo = o.poNumber.indexOf("PO-DRF-") === 0 ? `<span class="text-slate-400 italic">ดราฟต์</span>` : escapeHTML(o.poNumber);
                 const displayPr = o.prNumber === "PR-DRAFT" ? `<span class="text-slate-400 italic">ดราฟต์</span>` : escapeHTML(o.prNumber);
 
@@ -8783,7 +8814,7 @@ function exportReportToExcel() {
 
                 // Construct orders rows HTML
                 let ordersHtml = card.orders.map(o => {
-                    const dateStr = o.orderDate || '-';
+                    const dateStr = formatDateTimeThai(o.orderDate);
                     const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
                     let cost = parseFloat(o.unitCost) || 0;
                     if (cost === 0 && prod) {
@@ -9822,7 +9853,7 @@ function exportReportToExcel() {
                 return {
                     "เลข PO": o.poNumber || '-',
                     "เลข PR": o.prNumber || '-',
-                    "วันที่สั่งซื้อ": o.orderDate || '-',
+                    "วันที่สั่งซื้อ": formatDateTimeThai(o.orderDate),
                     "รหัสสินค้า": String(o.productId || '-'),
                     "ชื่อสินค้า": o.productName || (prod ? prod.name : '-'),
                     "จำนวนที่สั่ง": ordered,
@@ -9974,7 +10005,7 @@ function exportReportToExcel() {
 
                 return {
                     "เลข PO / รหัสใบรับ": g.poNumber || g.txId || '-',
-                    "วันที่ทำรายการล่าสุด": g.latestDate || '-',
+                    "วันที่ทำรายการล่าสุด": formatDateTimeThai(g.latestDate),
                     "ซัพพลายเออร์": supplierName,
                     "ชื่อสินค้า": productName,
                     "รหัสสินค้า": String(productId || '-'),
@@ -10669,7 +10700,7 @@ function exportReportToExcel() {
                 timelineHtml += `
                     <div class="flex items-center justify-between text-[10px] border-b border-slate-100 py-1.5 last:border-0">
                         <div class="space-y-0.5">
-                            <div class="font-semibold text-slate-700">${escapeHTML(h.date)} &bull; PO: ${escapeHTML(h.po || '-')}</div>
+                            <div class="font-semibold text-slate-700">${escapeHTML(formatDateTimeThai(h.date))} &bull; PO: ${escapeHTML(h.po || '-')}</div>
                             <div class="text-slate-400 text-[9px]">คู่ค้า: ${escapeHTML(h.supplier)} &bull; จำนวน: ${h.qty}</div>
                         </div>
                         <div class="text-right">
@@ -10712,7 +10743,7 @@ function exportReportToExcel() {
                 timelineHtml += `
                     <div class="flex items-center justify-between text-[10px] border-b border-slate-100 py-1.5 last:border-0">
                         <div class="space-y-0.5">
-                            <div class="font-semibold text-slate-700">${escapeHTML(h.date)} &bull; PO: ${escapeHTML(h.po || '-')}</div>
+                            <div class="font-semibold text-slate-700">${escapeHTML(formatDateTimeThai(h.date))} &bull; PO: ${escapeHTML(h.po || '-')}</div>
                             <div class="text-slate-500 font-medium">${escapeHTML(h.productName)} (${escapeHTML(h.productId)})</div>
                         </div>
                         <div class="text-right">
