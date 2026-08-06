@@ -7952,11 +7952,36 @@ function exportReportToExcel() {
                 }
             }).then(async (result) => {
                 if (result.isConfirmed && result.value) {
+                    const data = result.value;
+                    
+                    if (data.status === 'สั่งแล้ว') {
+                        const confirmResult = await Swal.fire({
+                            title: 'ยืนยันการเปลี่ยนสถานะ?',
+                            text: 'หากเปลี่ยนสถานะเป็น "สั่งแล้ว" รายการนี้จะถูกย้ายออกจากหน้าจัดการคำสั่งซื้อไปยังหน้าตรวจรับสินค้าทันที',
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#2563eb',
+                            cancelButtonColor: '#6b7280',
+                            confirmButtonText: 'ยืนยันเปลี่ยนเป็นสั่งแล้ว',
+                            cancelButtonText: 'ยกเลิก',
+                            reverseButtons: true,
+                            customClass: {
+                                popup: 'rounded-2xl',
+                                confirmButton: 'rounded-xl font-semibold !text-xs',
+                                cancelButton: 'rounded-xl font-semibold !text-xs',
+                            }
+                        });
+                        
+                        if (!confirmResult.isConfirmed) {
+                            return;
+                        }
+                    }
+                    
                     showLoading("กำลังอัปเดตใบสั่งซื้อ...");
                     try {
                         const res = await fetch(API_URL, {
                             method: 'POST',
-                            body: JSON.stringify({ action: 'updatePurchaseOrderDraft', payload: result.value })
+                            body: JSON.stringify({ action: 'updatePurchaseOrderDraft', payload: data })
                         });
                         const resData = await res.json();
                         if (resData.status === 'success') {
@@ -9627,27 +9652,41 @@ async function executeDirectUpdatePurchaseOrderDraft(payload) {
     const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
     const purchaseOrders = ensureArray(snapshot.val());
     
-    const draftPoList = payload.draftPoList;
-    const finalPoNumber = String(payload.finalPoNumber).trim();
-    const prNumber = String(payload.prNumber || "").trim();
-    const supplier = String(payload.supplier || "").trim();
-    const orderDate = String(payload.orderDate || "").trim();
+    const originalPoNumber = String(payload.originalPoNumber).trim();
+    const newPoNumber = String(payload.newPoNumber || '').trim();
+    const newPrNumber = String(payload.newPrNumber || '').trim();
+    const orderedQty = parseFloat(payload.orderedQty) || 0;
+    const unitCost = parseFloat(payload.unitCost) || 0;
+    const status = String(payload.status || '').trim();
+    const productId = String(payload.productId).trim();
+    const newSupplier = String(payload.newSupplier || '').trim();
     
-    draftPoList.forEach(draftItem => {
-        const itemPoNum = String(draftItem.poNumber).trim();
-        const itemProdId = String(draftItem.productId).trim();
-        const index = purchaseOrders.findIndex(o => String(o.poNumber).trim() === itemPoNum && String(o.productId).trim() === itemProdId);
-        
-        if (index !== -1) {
-            purchaseOrders[index].poNumber = finalPoNumber;
-            purchaseOrders[index].prNumber = prNumber;
-            purchaseOrders[index].supplier = supplier;
-            purchaseOrders[index].orderDate = orderDate;
-            purchaseOrders[index].status = "ค้างส่ง";
-            purchaseOrders[index].unitCost = parseFloat(draftItem.unitCost) || 0;
-            purchaseOrders[index].totalCost = (parseFloat(draftItem.unitCost) || 0) * (parseFloat(purchaseOrders[index].orderedQty) || 0);
-        }
-    });
+    if (orderedQty <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    
+    const index = purchaseOrders.findIndex(o => String(o.poNumber).trim() === originalPoNumber);
+    if (index === -1) throw new Error("ไม่พบรายการใบสั่งซื้อต้นฉบับ " + originalPoNumber);
+    
+    let currentStatus = String(purchaseOrders[index].status).trim();
+    if (status) {
+        currentStatus = status;
+    } else if (newPoNumber && newPoNumber.indexOf("PO-DRF-") !== 0) {
+        currentStatus = "สั่งแล้ว";
+    }
+    
+    purchaseOrders[index] = {
+        poNumber: newPoNumber || originalPoNumber,
+        prNumber: newPrNumber || "PR-DRAFT",
+        productId: productId,
+        productName: purchaseOrders[index].productName,
+        orderDate: purchaseOrders[index].orderDate,
+        orderedQty: orderedQty,
+        receivedQty: parseFloat(purchaseOrders[index].receivedQty) || 0,
+        lastReceivedDate: purchaseOrders[index].lastReceivedDate || "",
+        status: currentStatus,
+        unitCost: unitCost,
+        totalCost: orderedQty * unitCost,
+        supplier: newSupplier
+    };
     
     await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
     db.purchaseOrders = purchaseOrders;
