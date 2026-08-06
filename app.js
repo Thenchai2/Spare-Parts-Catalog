@@ -4817,7 +4817,8 @@ function renderRestockHistoryTable() {
     const searchKeyword = document.getElementById('restock_history_search').value.toLowerCase();
     const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
     
-    let restockTxs = transactions.filter(t => t.status === 'Restock');
+    // Filter only for Manual Stock Adjustment transactions (excluding PO Receives)
+    let restockTxs = transactions.filter(t => (t.status === 'Restock' || t.machine_id === 'RESTOCK') && t.machine_id !== 'PO_RECEIVE' && !(t.note && (t.note.startsWith("รับสินค้าจาก PO ") || t.note.startsWith("รับสินค้าfrom PO "))));
     
     let historyList = [];
     restockTxs.forEach(t => {
@@ -6447,7 +6448,6 @@ function exportReportToExcel() {
                 cancelButtonColor: '#64748b',
                 confirmButtonText: 'ใช่, ลบทันที',
                 cancelButtonText: 'ยกเลิก',
-                customClass: { popup: 'rounded-2xl' }
             }).then((result) => {
                 if (result.isConfirmed) {
                     showLoading('กำลังลบคู่มือ...');
@@ -6489,7 +6489,6 @@ function exportReportToExcel() {
             }
 
             if (!manual.file_url) {
-                // Fallback text document if no file attached yet
                 const blob = new Blob([`คู่มือการใช้งาน: ${manual.title}\n\nรายละเอียด: ${manual.description || '-'}\n\nระบบ Spare Parts LDT`], { type: 'text/plain;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -6534,7 +6533,6 @@ function exportReportToExcel() {
             const container = document.getElementById('previewManualContainer');
             const downloadBtn = document.getElementById('btnDownloadFromPreview');
 
-            if (!modal || !container) return;
 
             titleEl.innerText = manual.title || 'ดูคู่มือ';
             subtitleEl.innerText = manual.description || 'เอกสารคู่มือการใช้งานระบบ';
@@ -6904,11 +6902,14 @@ function exportReportToExcel() {
                                             ${groupOptions}
                                         </select>
                                     </div>
-                                    ${isAdmin ? `
-                                    <button onclick="deleteAllPurchaseHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
-                                        <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
-                                    </button>
-                                    ` : ''}
+                                    <button onclick="exportPurchaseHistoryToExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                         <i class="fa-solid fa-file-excel"></i> ส่งออก Excel
+                                     </button>
+                                     ${isAdmin ? `
+                                     <button onclick="deleteAllPurchaseHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                         <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
+                                     </button>
+                                     ` : ''}
                                 </div>
                                 <!-- Right Search -->
                                 <div class="relative max-w-sm w-full lg:w-80">
@@ -6935,12 +6936,22 @@ function exportReportToExcel() {
                         <div id="view-history-receive-section" class="space-y-6 hidden">
                             <!-- Search & Filter Row for Receiving -->
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-3 flex-wrap">
+                                    <button onclick="exportReceiveHistoryToExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                        <i class="fa-solid fa-file-excel"></i> ส่งออก Excel
+                                    </button>
+                                ${isAdmin ? `
+                                <button onclick="deleteAllReceiveHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                    <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
+                                </button>
+                                ` : ''}
+                                </div>
                                 <!-- Search Field -->
                                 <div class="relative max-w-sm w-full sm:w-80">
                                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                                         <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
                                     </span>
-                                    <input type="text" id="searchReceiveHistoryInput" onkeyup="handleReceiveHistorySearch()" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา รหัสใบรับ, ผู้รับ, หมายเหตุ...">
+                                    <input type="text" id="searchReceiveHistoryInput" onkeyup="handleReceiveHistorySearch()" class="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 bg-white placeholder-slate-400 focus:outline-none transition shadow-sm" placeholder="ค้นหา เลข PO, ซัพพลาย, รหัสใบรับ, ผู้รับ, หมายเหตุ...">
                                 </div>
                             </div>
 
@@ -8891,285 +8902,377 @@ function exportReportToExcel() {
             }
         };
 
-        window.renderReceiveHistoryTable = async function() {
+                window.renderReceiveHistoryTable = async function() {
             const container = document.getElementById('receiveHistoryCardsContainer');
             if (!container) return;
 
-            if (!transactions || transactions.length === 0) {
-                showLoading('กำลังโหลดประวัติการรับเข้า...');
-                try {
-                    let transRes = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getTransactions' }) });
-                    let result = await transRes.json();
-                    if (result.status === 'success') {
-                        transactions = result.data || [];
-                    }
-                } catch (e) {
-                    showToast('ไม่สามารถดึงข้อมูลประวัติจากเครือข่ายได้', 'error');
-                }
-                hideLoading();
-            }
-
-            const searchInput = document.getElementById('searchReceiveHistoryInput');
-            const searchKeyword = searchInput ? searchInput.value.toLowerCase().trim() : '';
-
-            container.innerHTML = '';
-
-            // Filter for Restock transactions (Receive and Restock)
-            let receiveTx = transactions.filter(t => t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK');
-
-            // Group transactions by PO Number (if PO_RECEIVE) or by Transaction ID (if RESTOCK)
-            const grouped = {};
-            receiveTx.forEach(t => {
-                let groupKey = "";
-                let poNum = "";
-                if (t.machine_id === 'PO_RECEIVE') {
-                    if (t.note && t.note.startsWith("รับสินค้าจาก PO ")) {
-                        poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
-                    } else if (t.note && t.note.startsWith("รับสินค้าfrom PO ")) {
-                        poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+            try {
+                if (!transactions || transactions.length === 0) {
+                    if (db && Array.isArray(db.transactions) && db.transactions.length > 0) {
+                        transactions = db.transactions;
+                    } else {
+                        showLoading('กำลังโหลดประวัติการรับเข้า...');
+                        try {
+                            let transRes = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getTransactions' }) });
+                            let result = await transRes.json();
+                            if (result.status === 'success' && Array.isArray(result.data)) {
+                                transactions = result.data;
+                            }
+                        } catch (e) {
+                            showToast('ไม่สามารถดึงข้อมูลประวัติจากเครือข่ายได้', 'error');
+                        }
+                        hideLoading();
                     }
                 }
-                
-                if (poNum) {
-                    groupKey = "PO:" + poNum;
-                } else {
-                    groupKey = "TX:" + t.id; // Manual restocks grouped individually
-                }
 
-                if (!grouped[groupKey]) {
+                const searchInput = document.getElementById('searchReceiveHistoryInput');
+                const searchKeyword = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+                container.innerHTML = '';
+
+                const grouped = {};
+
+                // 1. Populate from purchase orders that are ordered or received
+                const purchaseOrders = (db && Array.isArray(db.purchaseOrders)) ? db.purchaseOrders : [];
+                purchaseOrders.forEach(po => {
+                    if (!po || !po.poNumber) return;
+                    const poNum = String(po.poNumber).trim();
+                    const recQty = parseFloat(po.receivedQty) || 0;
+                    // แสดงเฉพาะรายการที่มีการรับสินค้าแล้วจริงเท่านั้น (recQty > 0)
+                    if (recQty <= 0) return;
+
+                    const groupKey = "PO:" + poNum;
                     grouped[groupKey] = {
                         poNumber: poNum,
-                        txId: t.id,
-                        isPo: !!poNum,
+                        txId: poNum,
+                        isPo: true,
                         transactions: [],
-                        totalQty: 0,
-                        latestDate: ''
+                        totalQty: recQty,
+                        latestDate: po.lastReceivedDate || po.orderDate || ''
                     };
-                }
-                grouped[groupKey].transactions.push(t);
-                
-                // Sum the quantity in this transaction
-                let tQty = 0;
-                if (t.items && t.items.length > 0) {
-                    t.items.forEach(item => {
-                        tQty += parseFloat(item.qty) || 0;
-                    });
-                }
-                grouped[groupKey].totalQty += tQty;
+                });
 
-                const d = t.date || t.created_at || '';
-                if (d > grouped[groupKey].latestDate) {
-                    grouped[groupKey].latestDate = d;
-                }
-            });
+                // 2. Populate / merge from transactions
+                let receiveTx = (transactions || []).filter(t => t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK');
 
-            // Convert grouped object to array and sort by latestDate descending
-            let receiveGroups = Object.values(grouped);
-            receiveGroups.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
+                receiveTx.forEach(t => {
+                    let poNum = "";
+                    if (t.note) {
+                        if (t.note.startsWith("รับสินค้าจาก PO ")) {
+                            poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                        } else if (t.note.startsWith("รับสินค้าfrom PO ")) {
+                            poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                        } else {
+                            const match = t.note.match(/PO[-:\s]*([A-Za-z0-9\-_]+)/i);
+                            if (match && match[1]) poNum = match[1];
+                        }
+                    }
 
-            // Apply search filter
-            if (searchKeyword) {
-                receiveGroups = receiveGroups.filter(g => {
-                    if (g.poNumber && g.poNumber.toLowerCase().includes(searchKeyword)) return true;
-                    if (g.txId.toLowerCase().includes(searchKeyword)) return true;
-                    return g.transactions.some(t => {
-                        const noteText = (t.note || '').toLowerCase();
-                        const reqText = (t.requester || '').toLowerCase();
-                        let prodMatch = false;
-                        if (t.items && t.items.length > 0) {
-                            t.items.forEach(item => {
-                                const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(item.product_id).trim().toLowerCase()) : null;
-                                if (prod && prod.name.toLowerCase().includes(searchKeyword)) {
-                                    prodMatch = true;
+                    const groupKey = poNum ? ("PO:" + poNum) : ("TX:" + (t.id || 'RESTOCK'));
+
+                    if (!grouped[groupKey]) {
+                        grouped[groupKey] = {
+                            poNumber: poNum || '',
+                            txId: t.id || poNum || '',
+                            isPo: !!poNum,
+                            transactions: [],
+                            totalQty: 0,
+                            latestDate: ''
+                        };
+                    }
+
+                    if (!grouped[groupKey].transactions.some(existing => existing.id === t.id)) {
+                        grouped[groupKey].transactions.push(t);
+                    }
+
+                    const d = t.date || t.created_at || '';
+                    if (d > grouped[groupKey].latestDate) {
+                        grouped[groupKey].latestDate = d;
+                    }
+                });
+
+                // Calculate total quantities from transactions if transactions exist
+                Object.values(grouped).forEach(g => {
+                    if (g.transactions && g.transactions.length > 0) {
+                        let tQty = 0;
+                        g.transactions.forEach(t => {
+                            if (t.items && t.items.length > 0) {
+                                t.items.forEach(item => {
+                                    tQty += parseFloat(item.qty) || 0;
+                                });
+                            }
+                        });
+                        g.totalQty = tQty;
+                    }
+                });
+
+                // Convert grouped object to array and sort by latestDate descending
+                let receiveGroups = Object.values(grouped).filter(g => g.totalQty > 0 || (g.transactions && g.transactions.length > 0));
+                receiveGroups.sort((a, b) => (b.latestDate || '').localeCompare(a.latestDate || ''));
+
+                // Apply search filter
+                if (searchKeyword) {
+                    receiveGroups = receiveGroups.filter(g => {
+                        if (g.poNumber && g.poNumber.toLowerCase().includes(searchKeyword)) return true;
+                        if (g.txId && String(g.txId).toLowerCase().includes(searchKeyword)) return true;
+                        
+                        const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                        const firstTx = g.transactions && g.transactions[0] ? g.transactions[0] : null;
+                        const firstItem = firstTx && firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                        let productId = firstItem ? firstItem.product_id : '';
+                        if (po && po.productId) productId = po.productId;
+                        const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                        const supplierName = (po && po.supplier) ? po.supplier : (prod && prod.supplier ? prod.supplier : '');
+                        if (supplierName && supplierName.toLowerCase().includes(searchKeyword)) return true;
+
+                        if (g.transactions && g.transactions.length > 0) {
+                            return g.transactions.some(t => {
+                                const noteText = (t.note || '').toLowerCase();
+                                const reqText = (t.requester || '').toLowerCase();
+                                let prodMatch = false;
+                                if (t.items && t.items.length > 0) {
+                                    t.items.forEach(item => {
+                                        const prodItem = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(item.product_id).trim().toLowerCase()) : null;
+                                        if (prodItem && prodItem.name.toLowerCase().includes(searchKeyword)) {
+                                            prodMatch = true;
+                                        }
+                                    });
                                 }
+                                return noteText.includes(searchKeyword) || reqText.includes(searchKeyword) || prodMatch;
                             });
                         }
-                        return noteText.includes(searchKeyword) || reqText.includes(searchKeyword) || prodMatch;
+                        return false;
                     });
-                });
-            }
+                }
 
-            if (receiveGroups.length === 0) {
-                container.innerHTML = `
-                    <div class="border border-slate-150 rounded-2xl p-8 bg-slate-50/50 flex flex-col items-center justify-center text-center py-12">
-                        <i class="fa-solid fa-boxes-stacked text-slate-300 text-4xl mb-3"></i>
-                        <p class="text-sm font-bold text-slate-600">ไม่พบประวัติการรับเข้า</p>
-                        <p class="text-xs text-slate-400 mt-1">ไม่มีข้อมูลประวัติการรับเข้าคลังที่ตรงกับเงื่อนไขการค้นหา</p>
-                    </div>
-                `;
-                renderGenericPagination('receiveHistoryPaginationContainer', 'receiveHistoryPaginationInfo', 'receiveHistoryPaginationControls', 0, 1, 20, 'changeReceiveHistoryPage');
-                return;
-            }
+                if (receiveGroups.length === 0) {
+                    container.innerHTML = `
+                        <div class="border border-slate-150 rounded-2xl p-8 bg-slate-50/50 flex flex-col items-center justify-center text-center py-12">
+                            <i class="fa-solid fa-boxes-stacked text-slate-300 text-4xl mb-3"></i>
+                            <p class="text-sm font-bold text-slate-600">ไม่พบประวัติการรับเข้า</p>
+                            <p class="text-xs text-slate-400 mt-1">ไม่มีข้อมูลประวัติการรับเข้าคลังที่ตรงกับเงื่อนไขการค้นหา</p>
+                        </div>
+                    `;
+                    renderGenericPagination('receiveHistoryPaginationContainer', 'receiveHistoryPaginationInfo', 'receiveHistoryPaginationControls', 0, 1, 20, 'changeReceiveHistoryPage');
+                    return;
+                }
 
-            const rxPageSize = 20;
-            const rxTotalItems = receiveGroups.length;
-            const rxTotalPages = Math.ceil(rxTotalItems / rxPageSize);
-            if (receiveHistoryCurrentPage > rxTotalPages) receiveHistoryCurrentPage = rxTotalPages;
-            if (receiveHistoryCurrentPage < 1) receiveHistoryCurrentPage = 1;
-            const rxStartIndex = (receiveHistoryCurrentPage - 1) * rxPageSize;
-            const rxEndIndex = rxStartIndex + rxPageSize;
-            const pagedReceiveGroups = receiveGroups.slice(rxStartIndex, rxEndIndex);
+                const rxPageSize = 20;
+                const rxTotalItems = receiveGroups.length;
+                const rxTotalPages = Math.ceil(rxTotalItems / rxPageSize);
+                if (receiveHistoryCurrentPage > rxTotalPages) receiveHistoryCurrentPage = rxTotalPages;
+                if (receiveHistoryCurrentPage < 1) receiveHistoryCurrentPage = 1;
+                const rxStartIndex = (receiveHistoryCurrentPage - 1) * rxPageSize;
+                const rxEndIndex = rxStartIndex + rxPageSize;
+                const pagedReceiveGroups = receiveGroups.slice(rxStartIndex, rxEndIndex);
 
-            const formatDateTimeThai = (dateStr) => {
-                if (!dateStr) return '-';
-                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
-                const parts = normalized.split(' ');
-                const datePart = parts[0];
-                const timePart = parts[1] || '';
+                const formatDateTimeThai = (dateStr) => {
+                    if (!dateStr) return '-';
+                    const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
+                    const parts = normalized.split(' ');
+                    const datePart = parts[0];
+                    const timePart = parts[1] || '';
 
-                const dateSplit = datePart.split('-');
-                if (dateSplit.length !== 3) return dateStr;
+                    const dateSplit = datePart.split('-');
+                    if (dateSplit.length !== 3) return dateStr;
 
-                const y = dateSplit[0];
-                const m = dateSplit[1];
-                const d = dateSplit[2];
+                    const y = dateSplit[0];
+                    const m = dateSplit[1];
+                    const d = dateSplit[2];
 
-                return `${d}/${m}/${y} ${timePart}`.trim();
-            };
+                    return `${d}/${m}/${y} ${timePart}`.trim();
+                };
 
-            pagedReceiveGroups.forEach((g, index) => {
-                let productName = 'ไม่พบชื่อสินค้า';
-                let productId = '';
-                let unit = 'ชิ้น';
-                const firstTx = g.transactions[0];
-                const firstItem = firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
-                
-                if (firstItem) {
-                    productId = firstItem.product_id;
-                    const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
-                    if (prod) {
-                        productName = prod.name;
-                        unit = prod.unit || 'ชิ้น';
+                const isAdmin = currentUser && currentUser.role === 'ADMIN';
+
+                pagedReceiveGroups.forEach((g, index) => {
+                    let productName = 'ไม่พบชื่อสินค้า';
+                    let productId = '';
+                    let unit = 'ชิ้น';
+                    const firstTx = g.transactions && g.transactions[0] ? g.transactions[0] : null;
+                    const firstItem = firstTx && firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                    
+                    if (firstItem) {
+                        productId = firstItem.product_id;
+                        const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                        if (prod) {
+                            productName = prod.name;
+                            unit = prod.unit || 'ชิ้น';
+                        }
                     }
-                }
 
-                const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
-                if (po) {
-                    productName = po.productName;
-                    productId = po.productId;
-                }
+                    const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                    if (po) {
+                        productName = po.productName || productName;
+                        productId = po.productId || productId;
+                    }
 
-                let pendingQty = 0;
-                if (g.isPo && po) {
-                    pendingQty = Math.max(0, (parseFloat(po.orderedQty) || 0) - (parseFloat(po.receivedQty) || 0));
-                }
+                    const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                    const supplierName = (po && po.supplier) ? po.supplier : (prod && prod.supplier ? prod.supplier : 'ไม่ระบุ');
+                    const poDisplay = g.poNumber ? g.poNumber : (g.txId || '-');
+                    const formattedLatestDate = formatDateTimeThai(g.latestDate);
 
-                let statusHtml = '';
-                if (g.isPo) {
-                    if (pendingQty > 0) {
-                        statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">ค้างรับ (${pendingQty} ${unit})</span>`;
+                    let pendingQty = 0;
+                    if (g.isPo && po) {
+                        pendingQty = Math.max(0, (parseFloat(po.orderedQty) || 0) - (parseFloat(po.receivedQty) || 0));
+                    }
+
+                    let statusHtml = '';
+                    if (g.isPo) {
+                        if (pendingQty > 0) {
+                            statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">ค้างรับ (${pendingQty} ${unit})</span>`;
+                        } else {
+                            statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">รับครบ</span>`;
+                        }
                     } else {
                         statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">รับครบ</span>`;
                     }
-                } else {
-                    statusHtml = `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">รับครบ</span>`;
-                }
 
-                // Sort transactions within the group by date descending (latest first)
-                g.transactions.sort((a, b) => {
-                    const dateA = a.date || a.created_at || '';
-                    const dateB = b.date || b.created_at || '';
-                    return dateB.localeCompare(dateA);
-                });
-
-                let rowsHtml = g.transactions.map((t, idx) => {
-                    let tQty = 0;
-                    if (t.items && t.items.length > 0) {
-                        t.items.forEach(item => {
-                            tQty += parseFloat(item.qty) || 0;
+                    // Sort transactions within the group by date descending (latest first)
+                    if (g.transactions && g.transactions.length > 0) {
+                        g.transactions.sort((a, b) => {
+                            const dateA = a.date || a.created_at || '';
+                            const dateB = b.date || b.created_at || '';
+                            return dateB.localeCompare(dateA);
                         });
                     }
 
-                    const formattedDate = formatDateTimeThai(t.date || t.created_at || '');
+                    let rowsHtml = '';
+                    if (g.transactions && g.transactions.length > 0) {
+                        rowsHtml = g.transactions.map((t, idx) => {
+                            let tQty = 0;
+                            if (t.items && t.items.length > 0) {
+                                t.items.forEach(item => {
+                                    tQty += parseFloat(item.qty) || 0;
+                                });
+                            }
 
-                    return `
-                        <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 text-xs">
-                            <td class="p-3 text-center text-gray-500">${idx + 1}</td>
-                            <td class="p-3 font-bold text-gray-900">${escapeHTML(t.id)}</td>
-                            <td class="p-3 text-gray-500 text-xs font-mono">${escapeHTML(formattedDate)}</td>
-                            <td class="p-3 text-gray-700 font-semibold">${escapeHTML(t.requester)} <span class="text-[10px] text-slate-400 font-normal">(${escapeHTML(t.department)})</span></td>
-                            <td class="p-3 font-bold text-slate-800">${tQty} ${unit}</td>
-                            <td class="p-3 text-center">
-                                <button onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="text-emerald-600 hover:text-white bg-emerald-50 hover:bg-emerald-600 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-sm inline-flex items-center gap-1" title="ดูรายละเอียดการรับเข้า"><i class="fa-solid fa-eye"></i> รายละเอียด</button>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
+                            const formattedDate = formatDateTimeThai(t.date || t.created_at || '');
 
-                const cardId = `receive-card-${index}`;
-                const detailId = `receive-detail-${index}`;
-                const arrowId = `receive-arrow-${index}`;
+                            return `
+                                <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 text-xs">
+                                    <td class="p-3 text-center text-gray-500">${idx + 1}</td>
+                                    <td class="p-3 font-bold text-gray-900">
+                                        <span onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="cursor-pointer text-slate-800 hover:text-emerald-600 hover:underline" title="ดูรายละเอียด">${escapeHTML(t.id)}</span>
+                                    </td>
+                                    <td class="p-3 text-gray-500 text-xs font-mono">${escapeHTML(formattedDate)}</td>
+                                    <td class="p-3 text-gray-700 font-semibold">${escapeHTML(t.requester || '-')} <span class="text-[10px] text-slate-400 font-normal">(${escapeHTML(t.department || '-')})</span></td>
+                                    <td class="p-3 font-bold text-slate-800 text-right">${tQty} ${unit}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
 
-                let statsHtml = '';
-                if (g.isPo && po) {
-                    statsHtml = `
-                        <div class="text-right hidden sm:block">
-                            <span class="text-[10px] text-slate-400 block font-semibold uppercase">จำนวนที่สั่ง</span>
-                            <span class="font-bold text-slate-800 text-sm">${po.orderedQty} ${unit}</span>
+                    if (!rowsHtml) {
+                        rowsHtml = `
+                            <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 text-xs">
+                                <td class="p-3 text-center text-gray-500">1</td>
+                                <td class="p-3 font-bold text-gray-900">${escapeHTML(g.poNumber || g.txId)}</td>
+                                <td class="p-3 text-gray-500 text-xs font-mono">${escapeHTML(formattedLatestDate)}</td>
+                                <td class="p-3 text-gray-700 font-semibold">สโตร์ (รับเข้า) <span class="text-[10px] text-slate-400 font-normal">(คลังสินค้า)</span></td>
+                                <td class="p-3 font-bold text-slate-800 text-right">${g.totalQty} ${unit}</td>
+                            </tr>
+                        `;
+                    }
+
+                    const cardId = `receive-card-${index}`;
+                    const detailId = `receive-detail-${index}`;
+                    const arrowId = `receive-arrow-${index}`;
+
+                    const poKeyParam = g.poNumber ? ("PO:" + g.poNumber) : ("TX:" + g.txId);
+                    const itemCount = (g.transactions && g.transactions.length > 0) ? g.transactions.length : 1;
+
+                    const cardHtml = `
+                        <div class="bg-white border border-slate-150 rounded-2xl shadow-sm hover:shadow-md transition overflow-hidden">
+                            <!-- Card Header (Clickable) -->
+                            <div onclick="toggleHistoryCardDetail('${detailId}', '${arrowId}')" class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/50 transition duration-150 select-none">
+                                <div class="flex items-start gap-3.5 text-left flex-1 min-w-0">
+                                    <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
+                                        <i class="fa-solid fa-boxes-stacked text-base"></i>
+                                    </div>
+                                    <div class="text-left flex-1 min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-100/80 text-emerald-800 font-bold rounded-lg text-xs font-mono">
+                                                <i class="fa-solid fa-hashtag text-[10px] text-emerald-600"></i>
+                                                <span>เลข PO: ${escapeHTML(poDisplay)}</span>
+                                            </span>
+                                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-600 font-medium rounded-lg text-xs">
+                                                <i class="fa-regular fa-calendar-alt text-[10px] text-slate-400"></i>
+                                                <span>วันที่ทำรายการ: ${escapeHTML(formattedLatestDate)}</span>
+                                            </span>
+                                        </div>
+                                        <div class="text-xs text-slate-600 flex items-center gap-1.5 mb-1">
+                                            <i class="fa-solid fa-truck-field text-slate-400 text-xs"></i>
+                                            <span class="font-semibold text-slate-500">ซัพพลาย:</span>
+                                            <span class="font-bold text-slate-800">${escapeHTML(supplierName)}</span>
+                                        </div>
+                                        <div class="text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                                            <i class="fa-solid fa-box text-slate-300 text-[11px]"></i>
+                                            <span class="font-bold text-slate-700 truncate">${escapeHTML(productName)}</span>
+                                            <span class="text-[11px] text-slate-400">(${escapeHTML(productId)})</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center justify-between sm:justify-end gap-3 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-100">
+                                    <div class="min-w-[75px] text-center">
+                                        ${statusHtml}
+                                    </div>
+                                    <button class="text-slate-400 hover:text-slate-600 transition p-1">
+                                        <i id="${arrowId}" class="fa-solid fa-chevron-down transform transition-transform duration-200"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Card Expandable Detail Section -->
+                            <div id="${detailId}" class="hidden border-t border-slate-150 bg-slate-50/40 transition-all duration-300">
+                                <!-- Single Print Button Action Header -->
+                                <div class="p-4 bg-white border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div>
+                                        <h5 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-file-invoice text-emerald-600"></i>
+                                            ประวัติการรับเข้าสำหรับ PO: <span class="font-mono text-emerald-700">${escapeHTML(poDisplay)}</span>
+                                        </h5>
+                                        <span class="text-[11px] text-slate-400 mt-0.5 block">รวมจำนวนรับเข้าทั้งสิ้น ${g.totalQty} ${unit} (${itemCount} รายการทำรายการ)</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-shrink-0">
+                                        <button onclick="printPOGroupSlip('${escapeForJS(poKeyParam)}')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shadow-sm transition inline-flex items-center gap-2 cursor-pointer">
+                                            <i class="fa-solid fa-print"></i> พิมพ์ใบรับเข้าสินค้า
+                                        </button>
+                                        ${isAdmin ? `
+                                        <button onclick="deleteSingleReceiveGroup('${escapeForJS(poKeyParam)}')" class="px-3 py-2 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-600 rounded-xl font-bold text-xs transition shadow-sm inline-flex items-center gap-1.5 cursor-pointer" title="ลบประวัติรายการรับเข้านี้">
+                                            <i class="fa-solid fa-trash-can"></i> ลบรายการนี้
+                                        </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+
+                                <div class="p-4 overflow-x-auto w-full table-scroll">
+                                    <table class="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr class="border-b border-slate-200 text-slate-500 font-bold bg-slate-100/50">
+                                                <th class="p-3 text-center" style="width: 50px;">ลำดับ</th>
+                                                <th class="p-3">เลขที่ใบรับเข้า</th>
+                                                <th class="p-3">วันที่ทำรายการ</th>
+                                                <th class="p-3">ผู้รับเข้า (แผนก)</th>
+                                                <th class="p-3 text-right">จำนวนรับเข้า</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100 bg-white">
+                                            ${rowsHtml}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     `;
-                }
-                statsHtml += `
-                    <div class="text-right">
-                        <span class="text-[10px] text-slate-400 block font-semibold uppercase">รับเข้าคลังแล้ว</span>
-                        <span class="font-extrabold text-emerald-600 text-sm">${g.totalQty} ${unit}</span>
-                    </div>
-                `;
+                    container.insertAdjacentHTML('beforeend', cardHtml);
+                });
 
-                const cardHtml = `
-                    <div class="bg-white border border-slate-150 rounded-2xl shadow-sm hover:shadow-md transition overflow-hidden">
-                        <!-- Card Header (Clickable) -->
-                        <div onclick="toggleHistoryCardDetail('${detailId}', '${arrowId}')" class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition duration-150 select-none">
-                            <div class="flex items-start gap-4 text-left">
-                                <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
-                                    <i class="fa-solid fa-boxes-stacked text-base"></i>
-                                </div>
-                                <div class="text-left flex-1 min-w-0">
-                                    <span class="inline-block px-2.5 py-0.5 bg-slate-100 text-slate-600 font-bold rounded-lg text-[10px] font-mono mb-1">
-                                        ${g.isPo ? `PO: ${escapeHTML(g.poNumber)}` : `Manual: ${escapeHTML(g.txId)}`}
-                                    </span>
-                                    <h4 class="text-sm font-bold text-slate-800 leading-tight truncate">${escapeHTML(productName)}</h4>
-                                    <span class="text-[10px] text-slate-400 block mt-0.5">รหัสสินค้า: ${escapeHTML(productId)}</span>
-                                </div>
-                            </div>
-                            
-                            <div class="flex items-center gap-6">
-                                ${statsHtml}
-                                <div class="min-w-[80px] text-center">
-                                    ${statusHtml}
-                                </div>
-                                <button class="text-slate-400 hover:text-slate-600 transition">
-                                    <i id="${arrowId}" class="fa-solid fa-chevron-down transform transition-transform duration-200"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Card Expandable Detail Section -->
-                        <div id="${detailId}" class="hidden border-t border-slate-150 bg-slate-50/40 transition-all duration-300">
-                            <div class="p-4 overflow-x-auto w-full table-scroll">
-                                <table class="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr class="border-b border-slate-200 text-slate-500 font-bold bg-slate-100/50">
-                                            <th class="p-3 text-center" style="width: 60px;">ลำดับ</th>
-                                            <th class="p-3">เลขที่ใบรับเข้า</th>
-                                            <th class="p-3">วันที่ทำรายการ</th>
-                                            <th class="p-3">ผู้รับเข้า (แผนก)</th>
-                                            <th class="p-3">จำนวนรับเข้า</th>
-                                            <th class="p-3 text-center" style="width: 120px;">จัดการ</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-100 bg-white">
-                                        ${rowsHtml}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                container.insertAdjacentHTML('beforeend', cardHtml);
-            });
-
-            renderGenericPagination('receiveHistoryPaginationContainer', 'receiveHistoryPaginationInfo', 'receiveHistoryPaginationControls', rxTotalItems, receiveHistoryCurrentPage, rxPageSize, 'changeReceiveHistoryPage');
+                renderGenericPagination('receiveHistoryPaginationContainer', 'receiveHistoryPaginationInfo', 'receiveHistoryPaginationControls', rxTotalItems, receiveHistoryCurrentPage, rxPageSize, 'changeReceiveHistoryPage');
+            } catch (err) {
+                console.error("Error rendering receive history table:", err);
+            }
         };
 
         window.handleReceiveHistorySearch = function() {
@@ -9194,6 +9297,380 @@ function exportReportToExcel() {
                 detailEl.classList.add('hidden');
                 arrowEl.classList.remove('rotate-180');
             }
+        };
+
+        window.printPOGroupSlip = function(poKey) {
+            if (!transactions || transactions.length === 0) {
+                showToast('ไม่มีข้อมูลรายการรับเข้า', 'error');
+                return;
+            }
+
+            let poNum = "";
+            let matchingTxs = [];
+
+            let receiveTx = transactions.filter(t => t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK');
+
+            if (poKey.startsWith("PO:")) {
+                poNum = poKey.replace("PO:", "").trim();
+            } else if (poKey.startsWith("TX:")) {
+                const txId = poKey.replace("TX:", "").trim();
+                matchingTxs = receiveTx.filter(t => t.id === txId);
+            } else {
+                poNum = poKey.trim();
+            }
+
+            if (poNum) {
+                matchingTxs = receiveTx.filter(t => {
+                    let p = "";
+                    if (t.note) {
+                        if (t.note.startsWith("รับสินค้าจาก PO ")) {
+                            p = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                        } else if (t.note.startsWith("รับสินค้าfrom PO ")) {
+                            p = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                        } else {
+                            const match = t.note.match(/PO[-:\s]*([A-Za-z0-9\-_]+)/i);
+                            if (match && match[1]) p = match[1];
+                        }
+                    }
+                    return String(p).trim() === String(poNum).trim() || String(t.id).trim() === String(poNum).trim();
+                });
+            }
+
+            if (matchingTxs.length === 0) {
+                showToast('ไม่พบรายการรับเข้าสำหรับ PO นี้', 'error');
+                return;
+            }
+
+            const printWindow = window.open('', '_blank', 'width=900,height=700');
+            if (!printWindow) { showToast('กรุณาอนุญาต popup ในเบราว์เซอร์ก่อน', 'error'); return; }
+            const doc = printWindow.document;
+
+            const logoUrl = 'https://lh3.googleusercontent.com/d/1kH8HErbms_U0xnoiJ7jlW7r79FK3hXeB';
+            const companyNameTh = 'บริษัท พีรพัฒน์ เทคโนโลยี จำกัด (มหาชน) สำนักงานใหญ่';
+            const companyNameEn = 'PEERAPAT TECHNOLOGY PUBLIC COMPANY LIMITED';
+            const companyAddressTh = '406 ถ.รัชดาภิเษก แขวงสามเสนนอก เขตห้วยขวาง กรุงเทพ 10310';
+            const companyAddressEn = '406 Ratchadapisek Rd., Samsen Nork, Huaykwang, Bangkok 10310';
+            const companyContact = 'Tel. 02-290-1200 Fax: 02-290-1249';
+            const companyWebsite = 'Web site: https://www.peerapat.com';
+            const companyTaxId = 'เลขประจำตัวผู้เสียภาษี 0107551000231';
+
+            const formatDateTimeThai = (dateStr) => {
+                if (!dateStr) return '-';
+                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
+                const parts = normalized.split(' ');
+                const datePart = parts[0];
+                const timePart = parts[1] || '';
+
+                const dateSplit = datePart.split('-');
+                if (dateSplit.length !== 3) return dateStr;
+
+                const y = dateSplit[0];
+                const m = dateSplit[1];
+                const d = dateSplit[2];
+
+                return `${d}/${m}/${y} ${timePart}`.trim();
+            };
+
+            matchingTxs.sort((a, b) => {
+                const dA = a.date || a.created_at || '';
+                const dB = b.date || b.created_at || '';
+                return dA.localeCompare(dB);
+            });
+
+            const latestTx = matchingTxs[matchingTxs.length - 1];
+            const formattedLatestDate = formatDateTimeThai(latestTx.date || latestTx.created_at || '');
+            const po = poNum ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === poNum) : null) : null;
+
+            const itemMap = {};
+            let totalQty = 0;
+
+            matchingTxs.forEach(t => {
+                if (t.items && t.items.length > 0) {
+                    t.items.forEach(item => {
+                        const pid = String(item.product_id).trim();
+                        if (!itemMap[pid]) {
+                            itemMap[pid] = {
+                                product_id: pid,
+                                qty: 0
+                            };
+                        }
+                        itemMap[pid].qty += parseFloat(item.qty) || 0;
+                        totalQty += parseFloat(item.qty) || 0;
+                    });
+                }
+            });
+
+            let itemsRows = '';
+            const itemKeys = Object.keys(itemMap);
+
+            itemKeys.forEach(pid => {
+                const item = itemMap[pid];
+                const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === pid.toLowerCase()) : null;
+                let prodName = prod ? prod.name : 'ไม่ระบุชื่อสินค้า';
+                let unit = (prod && prod.unit) ? prod.unit : 'ชิ้น';
+
+                if (po && String(po.productId).trim().toLowerCase() === pid.toLowerCase()) {
+                    prodName = po.productName || prodName;
+                }
+
+                let orderedQtyStr = '-';
+                let pendingQtyStr = '-';
+                if (po) {
+                    const ordVal = parseFloat(po.orderedQty) || 0;
+                    const recVal = parseFloat(po.receivedQty) || 0;
+                    orderedQtyStr = ordVal + ' ' + unit;
+                    const pendingVal = Math.max(0, ordVal - recVal);
+                    pendingQtyStr = pendingVal + ' ' + unit;
+                }
+
+                itemsRows += '<tr>'
+                    + '<td style="padding:8px 10px;border-bottom:1px solid #e5e5e5;font-size:12px;font-family:monospace;font-weight:bold;">' + escapeHTML(pid) + '<\/td>'
+                    + '<td style="padding:8px 10px;border-bottom:1px solid #e5e5e5;font-size:12px;">' + escapeHTML(prodName) + '<\/td>'
+                    + '<td style="padding:8px 10px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;">' + orderedQtyStr + '<\/td>'
+                    + '<td style="padding:8px 10px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;font-weight:bold;color:#059669;">' + item.qty + ' ' + unit + '<\/td>'
+                    + '<td style="padding:8px 10px;border-bottom:1px solid #e5e5e5;text-align:right;font-size:12px;font-weight:bold;color:#e11d48;">' + pendingQtyStr + '<\/td>'
+                    + '<\/tr>';
+            });
+
+            const txIdsStr = matchingTxs.map(t => t.id).join(', ');
+            const requestersStr = [...new Set(matchingTxs.map(t => t.requester).filter(Boolean))].join(', ');
+            const departmentsStr = [...new Set(matchingTxs.map(t => t.department).filter(Boolean))].join(', ');
+
+            const tableHeaderHtml = '<tr>'
+                + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:left;">รหัสสินค้า<\/th>'
+                + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:left;">ชื่อรายการสินค้า<\/th>'
+                + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:100px;">จำนวนสั่งซื้อ<\/th>'
+                + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:110px;">จำนวนที่รับรวม<\/th>'
+                + '<th style="padding:8px 10px;font-size:12px;font-weight:600;text-align:right;width:100px;">จำนวนค้างรับ<\/th>'
+                + '<\/tr>';
+
+            const metaLeftHtml = '<div class="meta-row"><span class="meta-label">เลขที่ PO:<\/span> ' + escapeHTML(poNum || '-') + '<\/div>'
+                + '<div class="meta-row"><span class="meta-label">เลขที่ใบรับเข้า:<\/span> ' + escapeHTML(txIdsStr) + '<\/div>'
+                + '<div class="meta-row"><span class="meta-label">วันที่ทำรายการล่าสุด:<\/span> ' + escapeHTML(formattedLatestDate) + '<\/div>'
+                + '<div class="meta-row"><span class="meta-label">เลขที่ PR:<\/span> ' + escapeHTML((po && po.prNumber) ? po.prNumber : '-') + '<\/div>';
+
+            const metaRightHtml = '<div class="meta-row"><span class="meta-label">พนักงานผู้ทำรายการ:<\/span> ' + escapeHTML(requestersStr || '-') + '<\/div>'
+                + '<div class="meta-row"><span class="meta-label">สังกัดฝ่าย/แผนก:<\/span> ' + escapeHTML(departmentsStr || '-') + '<\/div>';
+
+            const css = '* { margin:0; padding:0; box-sizing:border-box; }'
+                + '@page { size:A4 portrait; margin: 5mm; }'
+                + 'body { font-family:Sarabun,sans-serif; font-size:13px; color:#222; background:#fff; }'
+                + '.page-wrapper { width:100%; display:flex; flex-direction:column; min-height:calc(297mm - 10mm); }'
+                + '.content-grow { flex-grow:1; }'
+                + '.doc-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px; }'
+                + '.logo-block { flex:0 0 130px; text-align:left; }'
+                + '.logo-block img { max-width:120px; max-height:60px; object-fit:contain; }'
+                + '.company-block { flex:1; text-align:center; padding:0 20px; }'
+                + '.company-name-th { font-size:14px; font-weight:700; }'
+                + '.company-name-en { font-size:11px; font-weight:600; color:#444; margin-top:2px; }'
+                + '.company-address { font-size:10px; color:#555; line-height:1.5; margin-top:4px; }'
+                + '.company-contact { font-size:10px; color:#555; margin-top:4px; }'
+                + '.doc-title-bar { text-align:center; font-size:14px; font-weight:700; border-top:1.5px solid #222; border-bottom:1.5px solid #222; padding:5px 0; margin:8px 0 12px 0; }'
+                + '.meta-grid { display:flex; justify-content:space-between; margin-bottom:10px; font-size:12px; }'
+                + '.meta-right { text-align:right; }'
+                + '.meta-row { margin-bottom:2px; }'
+                + '.meta-label { font-weight:600; }'
+                + 'table.items-table { width:100%; border-collapse:collapse; margin-top:10px; }'
+                + 'table.items-table th { background:#f5f5f5; border-top:1px solid #ccc; border-bottom:1px solid #ccc; }'
+                + '.summary-box { margin-top:12px; padding:8px 12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:4px; text-align:right; font-weight:bold; font-size:13px; }'
+                + '.signature-grid { display:flex; justify-content:space-between; margin-top:30px; font-size:11px; text-align:center; }'
+                + '.sig-box { flex:1; margin:0 10px; border-top:1px dashed #999; padding-top:40px; }';
+
+            const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>ใบรับเข้าสินค้า - PO: ${escapeHTML(poNum || txIdsStr)}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>${css}</style>
+</head>
+<body>
+    <div class="page-wrapper">
+        <div class="content-grow">
+            <div class="doc-header">
+                <div class="logo-block">
+                    <img src="${logoUrl}" alt="Logo">
+                </div>
+                <div class="company-block">
+                    <div class="company-name-th">${companyNameTh}</div>
+                    <div class="company-name-en">${companyNameEn}</div>
+                    <div class="company-address">${companyAddressTh}<br>${companyAddressEn}</div>
+                    <div class="company-contact">${companyContact} | ${companyWebsite} | ${companyTaxId}</div>
+                </div>
+            </div>
+
+            <div class="doc-title-bar">ใบรับเข้าสินค้า (Goods Receiving Slip)</div>
+
+            <div class="meta-grid">
+                <div class="meta-left">${metaLeftHtml}</div>
+                <div class="meta-right">${metaRightHtml}</div>
+            </div>
+
+            <table class="items-table">
+                <thead>${tableHeaderHtml}</thead>
+                <tbody>${itemsRows}</tbody>
+            </table>
+        </div>
+
+        <div class="signature-grid">
+            <div class="sig-box">ผู้ทำรายการรับเข้า<br><br>(${escapeHTML(requestersStr || '...........................................')})</div>
+            <div class="sig-box">ผู้ตรวจสอบ / เจ้าหน้าที่คลัง<br><br>(...........................................)</div>
+            <div class="sig-box">ผู้อนุมัติ<br><br>(...........................................)</div>
+        </div>
+    </div>
+    <script>
+        window.onload = function() { window.print(); }
+    </script>
+</body>
+</html>`;
+
+            doc.open();
+            doc.write(htmlContent);
+            doc.close();
+        };
+
+        window.deleteSingleReceiveGroup = async function(poKey) {
+            const confirmResult = await Swal.fire({
+                title: 'ยืนยันการลบประวัติรายการรับเข้านี้?',
+                text: `คุณกำลังจะลบรายการรับเข้า ${poKey} ออกจากประวัติรับเข้าคลังอย่างถาวร การดำเนินการนี้ไม่สามารถย้อนกลับได้`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'ใช่, ลบเลย!',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                }
+            });
+
+            if (!confirmResult.isConfirmed) return;
+
+            showLoading("กำลังลบรายการประวัติการรับเข้า...");
+            try {
+                let poNum = "";
+                let matchingTxs = [];
+                let receiveTx = transactions.filter(t => t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK');
+
+                if (poKey.startsWith("PO:")) {
+                    poNum = poKey.replace("PO:", "").trim();
+                } else if (poKey.startsWith("TX:")) {
+                    const txId = poKey.replace("TX:", "").trim();
+                    matchingTxs = receiveTx.filter(t => t.id === txId);
+                } else {
+                    poNum = poKey.trim();
+                }
+
+                if (poNum) {
+                    matchingTxs = receiveTx.filter(t => {
+                        let p = "";
+                        if (t.note) {
+                            if (t.note.startsWith("รับสินค้าจาก PO ")) {
+                                p = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                            } else if (t.note.startsWith("รับสินค้าfrom PO ")) {
+                                p = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                            } else {
+                                const match = t.note.match(/PO[-:\s]*([A-Za-z0-9\-_]+)/i);
+                                if (match && match[1]) p = match[1];
+                            }
+                        }
+                        return String(p).trim() === String(poNum).trim() || String(t.id).trim() === String(poNum).trim();
+                    });
+                }
+
+                if (matchingTxs.length === 0) {
+                    showToast("ไม่พบรายการรับเข้าเพื่อทำการลบ", "warning");
+                    hideLoading();
+                    return;
+                }
+
+                const snapshot = await firebase.database().ref('transactions').get();
+                let allTxs = ensureArray(snapshot.val());
+                const removeIds = matchingTxs.map(t => String(t.id).trim());
+
+                allTxs = allTxs.filter(t => !removeIds.includes(String(t.id).trim()));
+
+                await firebase.database().ref('transactions').set(allTxs);
+                db.transactions = allTxs;
+                transactions = allTxs;
+                transactionsCache = null;
+                invalidateLocalCache();
+
+                showToast("ลบประวัติรายการรับเข้าสำเร็จ", "success");
+                renderReceiveHistoryTable();
+            } catch (error) {
+                showToast("เกิดข้อผิดพลาด: " + error.message, "error");
+            }
+            hideLoading();
+        };
+
+        window.deleteAllReceiveHistory = async function() {
+            const confirmResult = await Swal.fire({
+                title: 'ต้องการลบประวัติการรับเข้าทั้งหมดจริงหรือ?',
+                text: 'ข้อมูลประวัติการรับเข้าสินค้าคลังทั้งหมดจะถูกลบออกจากระบบอย่างถาวร การดำเนินการนี้ไม่สามารถย้อนกลับได้',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'ยืนยันลบทั้งหมด',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                }
+            });
+
+            if (!confirmResult.isConfirmed) return;
+
+            const finalConfirm = await Swal.fire({
+                title: 'กรุณายืนยันอีกครั้ง',
+                text: 'ป้อนคำว่า "DELETE ALL" เพื่อยืนยันการลบประวัติรับเข้าทั้งหมดอย่างถาวร',
+                input: 'text',
+                inputPlaceholder: 'DELETE ALL',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'ยืนยันลบข้อมูลทั้งหมด',
+                cancelButtonText: 'ยกเลิก',
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                },
+                inputValidator: (value) => {
+                    if (value !== 'DELETE ALL') {
+                        return 'คำยืนยันไม่ถูกต้อง!';
+                    }
+                }
+            });
+
+            if (!finalConfirm.isConfirmed) return;
+
+            showLoading("กำลังลบประวัติการรับเข้าทั้งหมด...");
+            try {
+                const snapshot = await firebase.database().ref('transactions').get();
+                let allTxs = ensureArray(snapshot.val());
+
+                allTxs = allTxs.filter(t => !(t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK'));
+
+                await firebase.database().ref('transactions').set(allTxs);
+                db.transactions = allTxs;
+                transactions = allTxs;
+                transactionsCache = null;
+                invalidateLocalCache();
+
+                showToast("ลบประวัติการรับเข้าทั้งหมดสำเร็จ", "success");
+                renderReceiveHistoryTable();
+            } catch (error) {
+                showToast("เกิดข้อผิดพลาด: " + error.message, "error");
+            }
+            hideLoading();
         };
 
         window.deleteSingleHistoryRecord = async function(poNumber, productId) {
@@ -9301,6 +9778,230 @@ function exportReportToExcel() {
                 showToast("เกิดข้อผิดพลาด: " + error.message, "error");
             }
             hideLoading();
+        };
+
+        window.exportPurchaseHistoryToExcel = function() {
+            const orders = db.purchaseOrders || [];
+            const products = db.products || [];
+
+            // Filter orders: only ordered items (exclude drafts, wait-for-approvals)
+            let processedOrders = orders.filter(o => o.status === "สั่งแล้ว" || o.status === "ได้รับครบ" || o.status === "ค้างส่ง");
+
+            if (purchaseHistorySearchQuery) {
+                processedOrders = processedOrders.filter(o => 
+                    (o.poNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    (o.prNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    (o.productId || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    (o.productName || '').toLowerCase().includes(purchaseHistorySearchQuery)
+                );
+            }
+
+            if (purchaseHistoryCategoryFilter || purchaseHistoryGroupFilter) {
+                processedOrders = processedOrders.filter(o => {
+                    const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    if (!prod) return false;
+                    if (purchaseHistoryCategoryFilter && prod.category !== purchaseHistoryCategoryFilter) return false;
+                    if (purchaseHistoryGroupFilter && prod.group !== purchaseHistoryGroupFilter) return false;
+                    return true;
+                });
+            }
+
+            if (processedOrders.length === 0) {
+                showToast("ไม่พบข้อมูลประวัติใบสั่งซื้อสำหรับการส่งออก", "warning");
+                return;
+            }
+
+            const data = processedOrders.map(o => {
+                const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                const unit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
+                const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+                const ordered = parseFloat(o.orderedQty) || 0;
+                const received = parseFloat(o.receivedQty) || 0;
+                const pending = Math.max(0, ordered - received);
+
+                return {
+                    "เลข PO": o.poNumber || '-',
+                    "เลข PR": o.prNumber || '-',
+                    "วันที่สั่งซื้อ": o.orderDate || '-',
+                    "รหัสสินค้า": String(o.productId || '-'),
+                    "ชื่อสินค้า": o.productName || (prod ? prod.name : '-'),
+                    "จำนวนที่สั่ง": ordered,
+                    "จำนวนที่รับแล้ว": received,
+                    "จำนวนค้างส่ง": pending,
+                    "หน่วย": unit,
+                    "ซัพพลายเออร์": supplier,
+                    "สถานะ": o.status || '-'
+                };
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "ประวัติการสั่งซื้อ");
+
+            worksheet["!cols"] = [
+                { wch: 18 }, // เลข PO
+                { wch: 15 }, // เลข PR
+                { wch: 14 }, // วันที่สั่งซื้อ
+                { wch: 15 }, // รหัสสินค้า
+                { wch: 30 }, // ชื่อสินค้า
+                { wch: 14 }, // จำนวนที่สั่ง
+                { wch: 16 }, // จำนวนที่รับแล้ว
+                { wch: 14 }, // จำนวนค้างส่ง
+                { wch: 10 }, // หน่วย
+                { wch: 22 }, // ซัพพลายเออร์
+                { wch: 12 }  // สถานะ
+            ];
+
+            const today = new Date();
+            const dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+            
+            XLSX.writeFile(workbook, `Purchase_History_${dateStr}.xlsx`);
+            showToast("ส่งออกข้อมูลประวัติการสั่งซื้อสำเร็จ", "success");
+        };
+
+        window.exportReceiveHistoryToExcel = function() {
+            const searchInput = document.getElementById('searchReceiveHistoryInput');
+            const searchKeyword = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+            const grouped = {};
+
+            const purchaseOrders = (db && Array.isArray(db.purchaseOrders)) ? db.purchaseOrders : [];
+            purchaseOrders.forEach(po => {
+                if (!po || !po.poNumber) return;
+                const poNum = String(po.poNumber).trim();
+                const groupKey = "PO:" + poNum;
+                grouped[groupKey] = {
+                    poNumber: poNum,
+                    txId: poNum,
+                    isPo: true,
+                    transactions: [],
+                    totalQty: parseFloat(po.receivedQty) || 0,
+                    latestDate: po.lastReceivedDate || po.orderDate || ''
+                };
+            });
+
+            let receiveTx = (transactions || []).filter(t => t.status === 'Restock' || t.machine_id === 'PO_RECEIVE' || t.machine_id === 'RESTOCK');
+
+            receiveTx.forEach(t => {
+                let poNum = "";
+                if (t.note) {
+                    if (t.note.startsWith("รับสินค้าจาก PO ")) {
+                        poNum = t.note.replace("รับสินค้าจาก PO ", "").trim();
+                    } else if (t.note.startsWith("รับสินค้าfrom PO ")) {
+                        poNum = t.note.replace("รับสินค้าfrom PO ", "").trim();
+                    } else {
+                        const match = t.note.match(/PO[-:\s]*([A-Za-z0-9\-_]+)/i);
+                        if (match && match[1]) poNum = match[1];
+                    }
+                }
+
+                const groupKey = poNum ? ("PO:" + poNum) : ("TX:" + (t.id || 'RESTOCK'));
+
+                if (!grouped[groupKey]) {
+                    grouped[groupKey] = {
+                        poNumber: poNum || '',
+                        txId: t.id || poNum || '',
+                        isPo: !!poNum,
+                        transactions: [],
+                        totalQty: 0,
+                        latestDate: ''
+                    };
+                }
+
+                if (!grouped[groupKey].transactions.some(existing => existing.id === t.id)) {
+                    grouped[groupKey].transactions.push(t);
+                }
+
+                const d = t.date || t.created_at || '';
+                if (d > grouped[groupKey].latestDate) {
+                    grouped[groupKey].latestDate = d;
+                }
+            });
+
+            Object.values(grouped).forEach(g => {
+                if (g.transactions && g.transactions.length > 0) {
+                    let tQty = 0;
+                    g.transactions.forEach(t => {
+                        if (t.items && t.items.length > 0) {
+                            t.items.forEach(item => {
+                                tQty += parseFloat(item.qty) || 0;
+                            });
+                        }
+                    });
+                    g.totalQty = tQty;
+                }
+            });
+
+            let receiveGroups = Object.values(grouped);
+
+            if (searchKeyword) {
+                receiveGroups = receiveGroups.filter(g => {
+                    if (g.poNumber && g.poNumber.toLowerCase().includes(searchKeyword)) return true;
+                    if (g.txId && String(g.txId).toLowerCase().includes(searchKeyword)) return true;
+                    
+                    const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                    const firstTx = g.transactions && g.transactions[0] ? g.transactions[0] : null;
+                    const firstItem = firstTx && firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                    let productId = firstItem ? firstItem.product_id : '';
+                    if (po && po.productId) productId = po.productId;
+                    const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                    const supplierName = (po && po.supplier) ? po.supplier : (prod && prod.supplier ? prod.supplier : '');
+                    if (supplierName && supplierName.toLowerCase().includes(searchKeyword)) return true;
+                    return false;
+                });
+            }
+
+            if (receiveGroups.length === 0) {
+                showToast("ไม่พบข้อมูลประวัติการรับเข้าสำหรับการส่งออก", "warning");
+                return;
+            }
+
+            const data = receiveGroups.map(g => {
+                const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                const firstTx = g.transactions && g.transactions[0] ? g.transactions[0] : null;
+                const firstItem = firstTx && firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                let productId = firstItem ? firstItem.product_id : '';
+                let productName = 'ไม่พบชื่อสินค้า';
+                let unit = 'ชิ้น';
+                if (po && po.productId) productId = po.productId;
+                const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                if (prod) {
+                    productName = prod.name;
+                    unit = prod.unit || 'ชิ้น';
+                }
+                if (po && po.productName) productName = po.productName;
+                const supplierName = (po && po.supplier) ? po.supplier : (prod && prod.supplier ? prod.supplier : 'ไม่ระบุ');
+
+                return {
+                    "เลข PO / รหัสใบรับ": g.poNumber || g.txId || '-',
+                    "วันที่ทำรายการล่าสุด": g.latestDate || '-',
+                    "ซัพพลายเออร์": supplierName,
+                    "ชื่อสินค้า": productName,
+                    "รหัสสินค้า": String(productId || '-'),
+                    "จำนวนรับเข้าทั้งหมด": g.totalQty,
+                    "หน่วย": unit
+                };
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "ประวัติการรับเข้าคลัง");
+
+            worksheet["!cols"] = [
+                { wch: 20 }, // เลข PO / รหัสใบรับ
+                { wch: 20 }, // วันที่ทำรายการล่าสุด
+                { wch: 25 }, // ซัพพลายเออร์
+                { wch: 30 }, // ชื่อสินค้า
+                { wch: 15 }, // รหัสสินค้า
+                { wch: 18 }, // จำนวนรับเข้าทั้งหมด
+                { wch: 10 }  // หน่วย
+            ];
+
+            const today = new Date();
+            const dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+            
+            XLSX.writeFile(workbook, `Receive_History_${dateStr}.xlsx`);
+            showToast("ส่งออกข้อมูลประวัติการรับเข้าสำเร็จ", "success");
         };
 
         let purchaseOverviewProducts = [];
