@@ -6309,6 +6309,7 @@ function exportReportToExcel() {
         let purchaseActiveTab = 'all'; // 'all' หรือ 'pending'
         let purchaseSearchQuery = '';
         let dashboardOrdersSearchQuery = '';
+        let dashboardOrdersCurrentPage = 1;
         let draftOrdersSearchQuery = '';
         let manageOrdersSearchQuery = '';
         let manageOrdersSupplierFilter = '';
@@ -6435,12 +6436,19 @@ function exportReportToExcel() {
                                 </tbody>
                             </table>
                         </div>
+
+                        <!-- Pagination Container -->
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-150 p-4 rounded-2xl shadow-sm mt-4">
+                            <div id="dbOrdersPaginationInfo" class="text-xs text-slate-500 font-medium"></div>
+                            <div id="dbOrdersPaginationControls" class="flex items-center gap-1"></div>
+                        </div>
                     </div>
                 `;
                 
                 // Initialize the table body rendering
                 setTimeout(() => {
                     dashboardOrdersSearchQuery = '';
+                    dashboardOrdersCurrentPage = 1;
                     renderDashboardOrdersTable();
                 }, 50);
 
@@ -6924,6 +6932,7 @@ function exportReportToExcel() {
 
         function handleDashboardOrdersSearch(val) {
             dashboardOrdersSearchQuery = val.trim().toLowerCase();
+            dashboardOrdersCurrentPage = 1;
             renderDashboardOrdersTable();
         }
 
@@ -7036,6 +7045,9 @@ function exportReportToExcel() {
                 );
             }
 
+            const infoEl = document.getElementById('dbOrdersPaginationInfo');
+            const controlsEl = document.getElementById('dbOrdersPaginationControls');
+
             if (filtered.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
@@ -7048,11 +7060,25 @@ function exportReportToExcel() {
                         </td>
                     </tr>
                 `;
+                if (infoEl) infoEl.innerText = "ไม่พบรายการคำสั่งซื้อ";
+                if (controlsEl) controlsEl.innerHTML = '';
                 return;
             }
 
+            // Pagination calculation
+            const pageSize = 20;
+            const totalItems = filtered.length;
+            const totalPages = Math.ceil(totalItems / pageSize);
+
+            if (dashboardOrdersCurrentPage > totalPages) dashboardOrdersCurrentPage = totalPages;
+            if (dashboardOrdersCurrentPage < 1) dashboardOrdersCurrentPage = 1;
+
+            const startIndex = (dashboardOrdersCurrentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const pageOrders = filtered.slice(startIndex, endIndex);
+
             tableBody.innerHTML = '';
-            filtered.forEach(o => {
+            pageOrders.forEach(o => {
                 let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
                 if (o.status === 'รออนุมัติ') badgeColor = 'bg-amber-50 text-amber-700 border border-amber-200';
                 else if (o.status === 'สั่งแล้ว') badgeColor = 'bg-blue-50 text-blue-700 border border-blue-200';
@@ -7060,7 +7086,7 @@ function exportReportToExcel() {
                 else if (o.status === 'ได้รับครบ') badgeColor = 'bg-emerald-50 text-emerald-700 border border-emerald-200';
 
                 const rowHtml = `
-                    <tr class="hover:bg-slate-50/80 transition-colors">
+                    <tr onclick="showDashboardOrderDetailModal('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="hover:bg-slate-50/80 transition-colors cursor-pointer">
                         <td class="p-4 font-bold text-slate-800 font-mono tracking-wider">${escapeHTML(o.poNumber)}</td>
                         <td class="p-4 text-slate-600 font-mono">${escapeHTML(o.prNumber)}</td>
                         <td class="p-4 text-slate-500 font-mono text-[11px]">${escapeHTML(o.productId)}</td>
@@ -7075,6 +7101,162 @@ function exportReportToExcel() {
                     </tr>
                 `;
                 tableBody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+
+            renderDashboardOrdersPagination(totalItems, dashboardOrdersCurrentPage, totalPages);
+        }
+
+        function renderDashboardOrdersPagination(totalItems, currentPage, totalPages) {
+            const infoEl = document.getElementById('dbOrdersPaginationInfo');
+            const controlsEl = document.getElementById('dbOrdersPaginationControls');
+            if (!infoEl || !controlsEl) return;
+
+            if (totalItems === 0) {
+                infoEl.innerText = "ไม่พบรายการคำสั่งซื้อ";
+                controlsEl.innerHTML = '';
+                return;
+            }
+
+            const pageSize = 20;
+            const startItem = (currentPage - 1) * pageSize + 1;
+            const endItem = Math.min(currentPage * pageSize, totalItems);
+            infoEl.innerHTML = `แสดง <span class="font-bold text-slate-800">${startItem} - ${endItem}</span> จากทั้งหมด <span class="font-bold text-slate-800">${totalItems}</span> รายการ (หน้า <span class="font-bold text-indigo-600">${currentPage}</span> / ${totalPages})`;
+
+            let buttonsHtml = '';
+
+            // First page <<
+            buttonsHtml += `
+                <button onclick="changeDashboardOrdersPage(1)" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าแรก">
+                    <i class="fa-solid fa-angles-left"></i>
+                </button>
+            `;
+
+            // Prev page <
+            buttonsHtml += `
+                <button onclick="changeDashboardOrdersPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าก่อนหน้า">
+                    <i class="fa-solid fa-angle-left mr-1"></i> ก่อนหน้า
+                </button>
+            `;
+
+            // Page numbers
+            let startPage = Math.max(1, currentPage - 2);
+            let endPage = Math.min(totalPages, currentPage + 2);
+
+            if (startPage > 1) {
+                buttonsHtml += `<button onclick="changeDashboardOrdersPage(1)" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">1</button>`;
+                if (startPage > 2) {
+                    buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+                }
+            }
+
+            for (let p = startPage; p <= endPage; p++) {
+                if (p === currentPage) {
+                    buttonsHtml += `<button class="px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-500/20 cursor-default">${p}</button>`;
+                } else {
+                    buttonsHtml += `<button onclick="changeDashboardOrdersPage(${p})" class="px-3.5 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm">${p}</button>`;
+                }
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+                }
+                buttonsHtml += `<button onclick="changeDashboardOrdersPage(${totalPages})" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">${totalPages}</button>`;
+            }
+
+            // Next page >
+            buttonsHtml += `
+                <button onclick="changeDashboardOrdersPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าถัดไป">
+                    ถัดไป <i class="fa-solid fa-angle-right ml-1"></i>
+                </button>
+            `;
+
+            // Last page >>
+            buttonsHtml += `
+                <button onclick="changeDashboardOrdersPage(${totalPages})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าสุดท้าย">
+                    <i class="fa-solid fa-angles-right"></i>
+                </button>
+            `;
+
+            controlsEl.innerHTML = buttonsHtml;
+        }
+
+        window.changeDashboardOrdersPage = function(p) {
+            dashboardOrdersCurrentPage = p;
+            renderDashboardOrdersTable();
+        };
+
+        window.showDashboardOrderDetailModal = function(poNumber, productId) {
+            const orders = db.purchaseOrders || [];
+            const order = orders.find(o => String(o.poNumber).trim() === String(poNumber).trim() && String(o.productId).trim() === String(productId).trim());
+            if (!order) return;
+
+            const prod = db.products ? db.products.find(p => String(p.id).trim() === String(productId).trim()) : null;
+            const unit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
+            const supplier = order.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+            
+            const pendingQty = Math.max(0, order.orderedQty - order.receivedQty);
+            const hasPending = pendingQty > 0;
+            
+            let statusColor = 'text-slate-600 bg-slate-100';
+            if (order.status === 'รออนุมัติ') statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
+            else if (order.status === 'สั่งแล้ว') statusColor = 'text-blue-700 bg-blue-50 border-blue-200';
+            else if (order.status === 'ค้างส่ง') statusColor = 'text-red-700 bg-red-50 border-red-200';
+            else if (order.status === 'ได้รับครบ') statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+
+            Swal.fire({
+                title: '<i class="fa-solid fa-circle-info text-indigo-600 mr-2"></i>รายละเอียดคำสั่งซื้อ',
+                html: `
+                    <div class="space-y-4 text-left text-xs text-slate-700">
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                            <h4 class="font-bold text-slate-800 text-sm">${escapeHTML(order.productName)}</h4>
+                            <div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px] text-slate-500">
+                                <div><span class="text-slate-400">รหัสสินค้า:</span> <span class="font-bold font-mono text-slate-700">${escapeHTML(order.productId)}</span></div>
+                                <div><span class="text-slate-400">หน่วยนับ:</span> <span class="font-bold text-slate-700">${escapeHTML(unit)}</span></div>
+                                <div class="col-span-2"><span class="text-slate-400">ซัพพลายเออร์ (Supplier):</span> <span class="font-bold text-slate-800 text-xs">${escapeHTML(supplier)}</span></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 text-center">
+                            <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                                <span class="text-[9px] text-slate-400 font-semibold uppercase block">เลขที่ PO</span>
+                                <span class="font-bold font-mono text-slate-700 text-xs">${escapeHTML(order.poNumber.startsWith('PO-DRF-') ? 'ดราฟต์' : order.poNumber)}</span>
+                            </div>
+                            <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
+                                <span class="text-[9px] text-slate-400 font-semibold uppercase block">เลขที่ PR</span>
+                                <span class="font-bold font-mono text-slate-700 text-xs">${escapeHTML(order.prNumber === 'PR-DRAFT' ? 'ดราฟต์' : (order.prNumber || '-'))}</span>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-2.5 text-center">
+                            <div class="bg-slate-50 border border-slate-200 p-3 rounded-xl">
+                                <span class="text-[9px] text-slate-400 font-semibold uppercase block">จำนวนที่สั่ง</span>
+                                <span class="text-sm font-extrabold text-slate-800">${order.orderedQty} ${escapeHTML(unit)}</span>
+                            </div>
+                            <div class="bg-emerald-50 border border-emerald-100 p-3 rounded-xl">
+                                <span class="text-[9px] text-emerald-500 font-semibold uppercase block">รับเข้าแล้ว</span>
+                                <span class="text-sm font-extrabold text-emerald-600">${order.receivedQty} ${escapeHTML(unit)}</span>
+                            </div>
+                            <div class="${hasPending ? 'bg-rose-50 border border-rose-100' : 'bg-slate-50 border border-slate-200'} p-3 rounded-xl">
+                                <span class="text-[9px] ${hasPending ? 'text-rose-500' : 'text-slate-400'} font-semibold uppercase block">ค้างรับ</span>
+                                <span class="text-sm font-extrabold ${hasPending ? 'text-rose-600' : 'text-slate-500'}">${pendingQty} ${escapeHTML(unit)}</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-xl">
+                            <span class="text-slate-400 font-semibold">สถานะรายการ:</span>
+                            <span class="inline-block px-2.5 py-0.5 text-[10px] font-bold rounded-md uppercase border ${statusColor}">
+                                ${escapeHTML(order.status)}
+                            </span>
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: 'ปิดหน้าต่าง',
+                confirmButtonColor: '#4f46e5',
+                customClass: {
+                    popup: 'rounded-2xl w-full max-w-sm',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                }
             });
         }
 
