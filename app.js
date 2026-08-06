@@ -6562,6 +6562,8 @@ function exportReportToExcel() {
             } else if (key === 'history') {
                 desc = "ประวัติและรายการสั่งซื้อที่ทำเสร็จสิ้นแล้ว";
                 
+                const isAdmin = currentUser && currentUser.role === 'ADMIN';
+                
                 // Get unique categories and groups for filter dropdowns
                 const products = db.products || [];
                 const categories = [...new Set(products.map(p => p.category || 'ไม่ระบุ').filter(Boolean))].sort();
@@ -6590,6 +6592,11 @@ function exportReportToExcel() {
                                         ${groupOptions}
                                     </select>
                                 </div>
+                                ${isAdmin ? `
+                                <button onclick="deleteAllPurchaseHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                    <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
+                                </button>
+                                ` : ''}
                             </div>
                             <!-- Right Search -->
                             <div class="relative max-w-sm w-full lg:w-80">
@@ -8202,6 +8209,7 @@ function exportReportToExcel() {
 
             const orders = db.purchaseOrders || [];
             const products = db.products || [];
+            const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
             // Filter orders: only ordered items (exclude drafts, wait-for-approvals)
             let processedOrders = orders.filter(o => o.status === "สั่งแล้ว" || o.status === "ได้รับครบ" || o.status === "ค้างส่ง");
@@ -8314,6 +8322,13 @@ function exportReportToExcel() {
                             <td class="p-3 text-center font-bold text-slate-700">${o.orderedQty}</td>
                             <td class="p-3 text-right text-slate-600 font-mono">฿${cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td class="p-3 text-right text-slate-800 font-bold font-mono">฿${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            ${isAdmin ? `
+                            <td class="p-3 text-center">
+                                <button onclick="deleteSingleHistoryRecord('${escapeForJS(o.poNumber)}', '${escapeForJS(o.productId)}')" class="inline-flex items-center justify-center w-7 h-7 bg-rose-50 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition active:scale-95 border border-rose-100 hover:border-rose-600 shadow-sm" title="ลบรายการนี้">
+                                    <i class="fa-solid fa-trash-can text-xs"></i>
+                                </button>
+                            </td>
+                            ` : ''}
                         </tr>
                     `;
                 }).join('');
@@ -8361,6 +8376,7 @@ function exportReportToExcel() {
                                             <th class="p-3 text-center">จำนวน</th>
                                             <th class="p-3 text-right">ราคา/หน่วย</th>
                                             <th class="p-3 text-right">ราคารวม</th>
+                                            ${isAdmin ? `<th class="p-3 text-center" style="width: 80px;">จัดการ</th>` : ''}
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100 bg-white">
@@ -8387,6 +8403,113 @@ function exportReportToExcel() {
                 detailEl.classList.add('hidden');
                 arrowEl.classList.remove('rotate-180');
             }
+        };
+
+        window.deleteSingleHistoryRecord = async function(poNumber, productId) {
+            const confirmResult = await Swal.fire({
+                title: 'ยืนยันการลบประวัติรายการนี้?',
+                text: `คุณกำลังจะลบรายการสั่งซื้อเลขที่ PO: ${poNumber} ออกจากประวัติจัดซื้ออย่างถาวร การดำเนินการนี้ไม่สามารถย้อนกลับได้`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'ใช่, ลบเลย!',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                }
+            });
+            
+            if (!confirmResult.isConfirmed) return;
+            
+            showLoading("กำลังลบรายการประวัติ...");
+            try {
+                const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
+                let purchaseOrders = ensureArray(snapshot.val());
+                
+                purchaseOrders = purchaseOrders.filter(o => !(String(o.poNumber).trim() === String(poNumber).trim() && String(o.productId).trim() === String(productId).trim()));
+                
+                await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+                db.purchaseOrders = purchaseOrders;
+                invalidateLocalCache();
+                
+                showToast("ลบประวัติรายการสำเร็จ", "success");
+                renderPurchaseHistoryCards();
+            } catch (error) {
+                showToast("เกิดข้อผิดพลาด: " + error.message, "error");
+            }
+            hideLoading();
+        };
+
+        window.deleteAllPurchaseHistory = async function() {
+            const confirmResult = await Swal.fire({
+                title: 'ต้องการลบประวัติทั้งหมดจริงหรือ?',
+                text: 'ข้อมูลใบสั่งซื้อที่มีสถานะ "สั่งแล้ว", "ได้รับครบ", และ "ค้างส่ง" ทั้งหมดจะถูกลบออกจากระบบอย่างถาวร การดำเนินการนี้จะไม่ลบรายการที่เป็น "ดราฟต์" หรือ "รออนุมัติ"',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#3085d6',
+                confirmButtonText: 'ยืนยันลบทั้งหมด',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                }
+            });
+            
+            if (!confirmResult.isConfirmed) return;
+
+            const finalConfirm = await Swal.fire({
+                title: 'กรุณายืนยันอีกครั้ง',
+                text: 'ป้อนคำว่า "DELETE ALL" เพื่อยืนยันการลบประวัติจัดซื้อทั้งหมดอย่างถาวร',
+                input: 'text',
+                inputPlaceholder: 'DELETE ALL',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#6b7280',
+                confirmButtonText: 'ลบข้อมูลประวัติทั้งหมด',
+                cancelButtonText: 'ยกเลิก',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-semibold !text-xs',
+                    cancelButton: 'rounded-xl font-semibold !text-xs',
+                },
+                preConfirm: (value) => {
+                    if (value !== 'DELETE ALL') {
+                        Swal.showValidationMessage('กรุณาป้อนคำยืนยันให้ถูกต้อง');
+                        return false;
+                    }
+                    return true;
+                }
+            });
+
+            if (!finalConfirm.isConfirmed) return;
+            
+            showLoading("กำลังลบประวัติจัดซื้อทั้งหมด...");
+            try {
+                const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
+                let purchaseOrders = ensureArray(snapshot.val());
+                
+                // Keep only orders that are NOT in history statuses
+                purchaseOrders = purchaseOrders.filter(o => o.status !== "สั่งแล้ว" && o.status !== "ได้รับครบ" && o.status !== "ค้างส่ง");
+                
+                await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+                db.purchaseOrders = purchaseOrders;
+                invalidateLocalCache();
+                
+                showToast("ลบประวัติจัดซื้อทั้งหมดสำเร็จ", "success");
+                renderPurchaseHistoryCards();
+            } catch (error) {
+                showToast("เกิดข้อผิดพลาด: " + error.message, "error");
+            }
+            hideLoading();
         };
 
         let purchaseOverviewProducts = [];
