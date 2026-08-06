@@ -1808,6 +1808,27 @@ function updatePurchaseOrderDraft(payload) {
       supplier: newSupplier
     };
     
+    // Update master product record if found
+    let products = getFirebaseData("appData/products") || [];
+    const prodIndex = products.findIndex(p => String(p.id).trim() === productId);
+    if (prodIndex !== -1) {
+      products[prodIndex].cost = unitCost;
+      products[prodIndex].supplier = newSupplier;
+
+      // Auto-pricing update based on new cost
+      let factorA = 1.05;
+      let factorB = 1.10;
+      let factorC = 1.20;
+      if (unitCost >= 10000) { factorA = 1.02; factorB = 1.05; factorC = 1.10; }
+      else if (unitCost >= 5000) { factorA = 1.03; factorB = 1.07; factorC = 1.15; }
+      
+      products[prodIndex].price_a = Math.ceil(unitCost * factorA);
+      products[prodIndex].price_b = Math.ceil(unitCost * factorB);
+      products[prodIndex].price_c = Math.ceil(unitCost * factorC);
+      
+      setFirebaseData("appData/products", products);
+    }
+    
     setFirebaseData("appData/purchaseOrders", purchaseOrders);
     
     if (newSupplier) {

@@ -9954,8 +9954,11 @@ async function executeDirectDeletePurchaseOrderActive(payload) {
 }
 
 async function executeDirectUpdatePurchaseOrderDraft(payload) {
-    const snapshot = await firebase.database().ref('appData/purchaseOrders').get();
-    const purchaseOrders = ensureArray(snapshot.val());
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let purchaseOrders = ensureArray(fbData.appData?.purchaseOrders);
+    let products = ensureArray(fbData.appData?.products);
     
     const originalPoNumber = String(payload.originalPoNumber).trim();
     const newPoNumber = String(payload.newPoNumber || '').trim();
@@ -9992,9 +9995,33 @@ async function executeDirectUpdatePurchaseOrderDraft(payload) {
         totalCost: orderedQty * unitCost,
         supplier: newSupplier
     };
+
+    // Update master product record if found
+    const product = products.find(p => String(p.id).trim() === productId);
+    if (product) {
+        product.cost = unitCost;
+        product.supplier = newSupplier;
+
+        // Auto-pricing update based on new cost
+        let factorA = 1.05;
+        let factorB = 1.10;
+        let factorC = 1.20;
+        if (unitCost >= 10000) { factorA = 1.02; factorB = 1.05; factorC = 1.10; }
+        else if (unitCost >= 5000) { factorA = 1.03; factorB = 1.07; factorC = 1.15; }
+        
+        product.price_a = Math.ceil(unitCost * factorA);
+        product.price_b = Math.ceil(unitCost * factorB);
+        product.price_c = Math.ceil(unitCost * factorC);
+    }
     
-    await firebase.database().ref('appData/purchaseOrders').set(purchaseOrders);
+    const updates = {};
+    updates["appData/purchaseOrders"] = purchaseOrders;
+    updates["appData/products"] = products;
+    
+    await firebase.database().ref().update(updates);
+    
     db.purchaseOrders = purchaseOrders;
+    db.products = products;
     invalidateLocalCache();
 }
 
