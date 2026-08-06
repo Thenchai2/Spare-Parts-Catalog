@@ -4752,35 +4752,43 @@ function exportRestockToExcel() {
         return;
     }
 
-    let csvContent = "\uFEFF"; // UTF-8 BOM
-    csvContent += "ลำดับ,รหัสสินค้า,ชื่อสินค้า,หมวดหมู่,หน่วยนับ,สต็อกปัจจุบัน\r\n";
+    // Map to worksheet format
+    const data = filteredProducts.map((p, index) => ({
+        "ลำดับ": index + 1,
+        "รหัสสินค้า": String(p.id),
+        "ชื่อสินค้า": p.name || '',
+        "หมวดหมู่": p.category || 'ทั่วไป',
+        "หน่วยนับ": p.unit || '-',
+        "สต็อกปัจจุบัน": p.stock_qty || 0
+    }));
 
-    filteredProducts.forEach((p, index) => {
-        let productId = `="${String(p.id).replace(/"/g, '""')}"`;
-        let productName = String(p.name || '').replace(/"/g, '""');
-        let category = String(p.category || 'ทั่วไป').replace(/"/g, '""');
-        let unit = String(p.unit || '-').replace(/"/g, '""');
-        let stockQty = p.stock_qty || 0;
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "ยอดสต็อก");
+    
+    const max_width = data.reduce((w, r) => Math.max(w, r["ชื่อสินค้า"].length), 10);
+    worksheet["!cols"] = [
+        { wch: 6 },  // ลำดับ
+        { wch: 15 }, // รหัสสินค้า
+        { wch: Math.min(max_width + 4, 50) }, // ชื่อสินค้า
+        { wch: 15 }, // หมวดหมู่
+        { wch: 10 }, // หน่วยนับ
+        { wch: 15 }  // สต็อกปัจจุบัน
+    ];
 
-        if (productName.includes(',') || productName.includes('\n')) productName = `"${productName}"`;
-        if (category.includes(',') || category.includes('\n')) category = `"${category}"`;
-        if (unit.includes(',') || unit.includes('\n')) unit = `"${unit}"`;
-
-        csvContent += `${index + 1},${productId},${productName},${category},${unit},${stockQty}\r\n`;
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
+    // Format numbers
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        const stock_cell = XLSX.utils.encode_cell({c: 5, r: R}); // Column F is stock_qty (0-indexed: 5)
+        if (worksheet[stock_cell]) {
+            worksheet[stock_cell].t = 'n';
+            worksheet[stock_cell].z = '#,##0';
+        }
+    }
 
     const dateStr = new Date().toLocaleDateString('th-TH').replace(/\//g, '-');
-    link.setAttribute("download", `รายการอะไหล่และยอดคงเหลือ_${dateStr}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('ส่งออกไฟล์ Excel (CSV) เรียบร้อยแล้ว', 'success');
+    XLSX.writeFile(workbook, `รายการอะไหล่และยอดคงเหลือ_${dateStr}.xlsx`);
+    showToast('ส่งออกไฟล์ Excel เรียบร้อยแล้ว', 'success');
 }
 
 async function initRestockHistoryView() {
@@ -4880,46 +4888,58 @@ function exportRestockHistoryToExcel() {
     if (!table) return;
     
     const rows = table.querySelectorAll('tbody tr');
-    let csvContent = "\uFEFF"; // UTF-8 BOM
+    const data = [];
     
-    csvContent += "ลำดับ,รหัสสินค้า,ชื่อสินค้า,รูปแบบการปรับปรุงสต็อก,จำนวนที่ปรับปรุง,หน่วย,ผู้ดำเนินการ,หมายเหตุ\r\n";
-    
-    rows.forEach((row, index) => {
+    rows.forEach(row => {
         const cols = row.querySelectorAll('td');
         if (cols.length < 8) return;
         
-        const no = cols[0].innerText.trim();
-        let productId = cols[1].innerText.trim().replace(/"/g, '""');
-        let productName = cols[2].innerText.trim().replace(/"/g, '""');
-        let mode = cols[3].innerText.trim().replace(/"/g, '""');
-        let qty = cols[4].innerText.trim().replace(/"/g, '""');
-        let unit = cols[5].innerText.trim().replace(/"/g, '""');
-        let operator = cols[6].innerText.trim().replace(/"/g, '""');
-        let note = cols[7].innerText.trim().replace(/"/g, '""');
-        
-        productId = `="${productId}"`;
-        
-        if (productName.includes(',') || productName.includes('\n')) productName = `"${productName}"`;
-        if (mode.includes(',') || mode.includes('\n')) mode = `"${mode}"`;
-        if (unit.includes(',') || unit.includes('\n')) unit = `"${unit}"`;
-        if (operator.includes(',') || operator.includes('\n')) operator = `"${operator}"`;
-        if (note.includes(',') || note.includes('\n')) note = `"${note}"`;
-        
-        csvContent += `${no},${productId},${productName},${mode},${qty},${unit},${operator},${note}\r\n`;
+        data.push({
+            "ลำดับ": cols[0].innerText.trim(),
+            "รหัสสินค้า": cols[1].innerText.trim(),
+            "ชื่อสินค้า": cols[2].innerText.trim(),
+            "รูปแบบการปรับปรุงสต็อก": cols[3].innerText.trim(),
+            "จำนวนที่ปรับปรุง": parseFloat(cols[4].innerText.trim().replace(/,/g, '')) || 0,
+            "หน่วย": cols[5].innerText.trim(),
+            "ผู้ดำเนินการ": cols[6].innerText.trim(),
+            "หมายเหตุ": cols[7].innerText.trim()
+        });
     });
+
+    if (data.length === 0) {
+        showToast('ไม่มีข้อมูลสำหรับส่งออก', 'error');
+        return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "ประวัติปรับปรุงสต็อก");
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    
+    const max_width = data.reduce((w, r) => Math.max(w, r["ชื่อสินค้า"].length), 10);
+    worksheet["!cols"] = [
+        { wch: 6 },  // ลำดับ
+        { wch: 15 }, // รหัสสินค้า
+        { wch: Math.min(max_width + 4, 50) }, // ชื่อสินค้า
+        { wch: 25 }, // รูปแบบการปรับปรุงสต็อก
+        { wch: 15 }, // จำนวนที่ปรับปรุง
+        { wch: 10 }, // หน่วย
+        { wch: 15 }, // ผู้ดำเนินการ
+        { wch: 30 }  // หมายเหตุ
+    ];
+
+    // Format numbers
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        const qty_cell = XLSX.utils.encode_cell({c: 4, r: R}); // Column E is qty (0-indexed: 4)
+        if (worksheet[qty_cell]) {
+            worksheet[qty_cell].t = 'n';
+            worksheet[qty_cell].z = '#,##0';
+        }
+    }
+
     const dateStr = new Date().toLocaleDateString('th-TH').replace(/\//g, '-');
-    link.setAttribute("download", `ประวัติการปรับปรุงสต็อกสินค้า_${dateStr}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('ส่งออกไฟล์ Excel (CSV) เรียบร้อยแล้ว', 'success');
+    XLSX.writeFile(workbook, `ประวัติการปรับปรุงสต็อกสินค้า_${dateStr}.xlsx`);
+    showToast('ส่งออกไฟล์ Excel เรียบร้อยแล้ว', 'success');
 }
 
         // ===== Report Analytics Client Logic =====
@@ -5350,58 +5370,63 @@ function exportReportToExcel() {
         return;
     }
     
-    let csvContent = "\uFEFF";
-    
-    // Header row matching the table columns
-    const headers = ["ลำดับ", "รหัสสินค้า", "ชื่อสินค้า", "จำนวนที่เบิก", "ราคาต้นทุน", "ราคา (กลาง)", "ราคา (ตัวแทน)", "ราคา (ในเครือ)"];
-    csvContent += headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',') + "\r\n";
-    
-    reportFilteredProducts.forEach((p, index) => {
+    const data = reportFilteredProducts.map((p, index) => {
         const qty = reportProductUsageMap.get(String(p.id)) || 0;
         const cost = parseFloat(String(p.cost).replace(/,/g, '')) || 0;
         const priceA = parseFloat(String(p.price_a).replace(/,/g, '')) || 0;
         const priceB = parseFloat(String(p.price_b).replace(/,/g, '')) || 0;
         const priceC = parseFloat(String(p.price_c).replace(/,/g, '')) || 0;
-        
-        // Formatted exactly like in the table
-        const qtyStr = qty.toLocaleString('th-TH');
-        const costStr = `฿${cost.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        const priceAStr = `฿${priceA.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        const priceBStr = `฿${priceB.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-        const priceCStr = `฿${priceC.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
-        const rowData = [
-            String(index + 1),
-            `="${p.id}"`, // Force Excel to treat as text
-            p.name,
-            qtyStr,
-            costStr,
-            priceAStr,
-            priceBStr,
-            priceCStr
-        ];
-        
-        csvContent += rowData.map(val => {
-            let text = String(val).replace(/"/g, '""');
-            if (text.includes(',') || text.includes('\n') || text.includes('"') || text.startsWith('=')) {
-                return `"${text}"`;
-            }
-            return text;
-        }).join(',') + "\r\n";
+        return {
+            "ลำดับ": index + 1,
+            "รหัสสินค้า": String(p.id),
+            "ชื่อสินค้า": p.name || '',
+            "จำนวนที่เบิก": qty,
+            "ราคาต้นทุน": cost,
+            "ราคา (กลาง)": priceA,
+            "ราคา (ตัวแทน)": priceB,
+            "ราคา (ในเครือ)": priceC
+        };
     });
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "รายงานเบิกใช้อะไหล่");
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    
+    const max_width = data.reduce((w, r) => Math.max(w, r["ชื่อสินค้า"].length), 10);
+    worksheet["!cols"] = [
+        { wch: 6 },  // ลำดับ
+        { wch: 15 }, // รหัสสินค้า
+        { wch: Math.min(max_width + 4, 50) }, // ชื่อสินค้า
+        { wch: 15 }, // จำนวนที่เบิก
+        { wch: 15 }, // ราคาต้นทุน
+        { wch: 15 }, // ราคา (กลาง)
+        { wch: 15 }, // ราคา (ตัวแทน)
+        { wch: 15 }  // ราคา (ในเครือ)
+    ];
+
+    // Format numbers
+    const numFormat = '"฿"#,##0.00';
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+        // cols 4, 5, 6, 7 are cost, priceA, priceB, priceC (0-indexed)
+        for (let C = 4; C <= 7; ++C) {
+            const cell_ref = XLSX.utils.encode_cell({c: C, r: R});
+            if (worksheet[cell_ref]) {
+                worksheet[cell_ref].t = 'n';
+                worksheet[cell_ref].z = numFormat;
+            }
+        }
+        const qty_cell = XLSX.utils.encode_cell({c: 3, r: R});
+        if (worksheet[qty_cell]) {
+            worksheet[qty_cell].t = 'n';
+            worksheet[qty_cell].z = '#,##0';
+        }
+    }
+
     const dateStr = new Date().toLocaleDateString('th-TH').replace(/\//g, '-');
-    link.setAttribute("download", `รายงานการเบิกใช้อะไหล่_${dateStr}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('ส่งออกไฟล์ Excel (CSV) เรียบร้อยแล้ว', 'success');
+    XLSX.writeFile(workbook, `รายงานการเบิกใช้อะไหล่_${dateStr}.xlsx`);
+    showToast('ส่งออกไฟล์ Excel เรียบร้อยแล้ว', 'success');
 }
         // ===== Transactions History Client Logic =====
         async function loadTransactions() {
@@ -7561,31 +7586,47 @@ function exportReportToExcel() {
                 return;
             }
 
-            let csvContent = "\uFEFF"; // UTF-8 BOM so Excel opens with correct Thai characters
-            csvContent += '"รหัสสินค้า","ชื่อสินค้า","จำนวนที่สั่ง","หน่วย","Supplier"\n';
-
-            draftOrders.forEach(o => {
+            const data = draftOrders.map(o => {
                 const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
                 const unit = prod ? prod.unit : 'ชิ้น';
                 const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
 
-                const escapedName = o.productName.replace(/"/g, '""');
-                const escapedSupplier = supplier.replace(/"/g, '""');
-                const escapedUnit = unit.replace(/"/g, '""');
-
-                csvContent += `"${o.productId}","${escapedName}",${o.orderedQty},"${escapedUnit}","${escapedSupplier}"\n`;
+                return {
+                    "รหัสสินค้า": String(o.productId),
+                    "ชื่อสินค้า": o.productName || '',
+                    "จำนวนที่สั่ง": parseFloat(o.orderedQty) || 0,
+                    "หน่วย": unit,
+                    "Supplier": supplier
+                };
             });
 
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "เตรียมสั่งซื้อ");
+
+            const max_width = data.reduce((w, r) => Math.max(w, r["ชื่อสินค้า"].length), 10);
+            worksheet["!cols"] = [
+                { wch: 15 }, // รหัสสินค้า
+                { wch: Math.min(max_width + 4, 50) }, // ชื่อสินค้า
+                { wch: 15 }, // จำนวนที่สั่ง
+                { wch: 10 }, // หน่วย
+                { wch: 20 }  // Supplier
+            ];
+
+            // Format numbers
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+                const qty_cell = XLSX.utils.encode_cell({c: 2, r: R}); // Column C is orderedQty (0-indexed: 2)
+                if (worksheet[qty_cell]) {
+                    worksheet[qty_cell].t = 'n';
+                    worksheet[qty_cell].z = '#,##0';
+                }
+            }
+
             const today = new Date();
             const dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
             
-            link.setAttribute("href", URL.createObjectURL(blob));
-            link.setAttribute("download", `Draft_Purchase_Orders_${dateStr}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            XLSX.writeFile(workbook, `Draft_Purchase_Orders_${dateStr}.xlsx`);
             showToast("ส่งออกข้อมูลสำเร็จ", "success");
         }
 
