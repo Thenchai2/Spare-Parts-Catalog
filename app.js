@@ -1200,6 +1200,15 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
         }
 
         function updateAllViews() {
+            // แก้ไขข้อมูลสถานะ "ร่าง" เก่าให้เป็น "เตรียมสั่ง" เพื่อแสดงผลใน UI
+            if (db && Array.isArray(db.purchaseOrders)) {
+                db.purchaseOrders.forEach(o => {
+                    if (o && o.status === "ร่าง") {
+                        o.status = "เตรียมสั่ง";
+                    }
+                });
+            }
+
             // จัดเรียงรายการยกเลิกใช้ไปไว้ด้านล่างสุด
             if (db && Array.isArray(db.products)) {
                 db.products.sort((a, b) => {
@@ -9453,7 +9462,7 @@ async function executeDirectAddPurchaseOrderDraft(payload) {
         orderedQty: orderedQty,
         receivedQty: 0,
         lastReceivedDate: "",
-        status: "ร่าง",
+        status: "เตรียมสั่ง",
         unitCost: currentCost,
         totalCost: orderedQty * currentCost,
         supplier: currentSupplier
