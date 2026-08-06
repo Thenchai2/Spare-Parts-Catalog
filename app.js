@@ -2912,7 +2912,7 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
         }
 
         // ===== RESTOCK PRODUCT LOGIC =====
-        function initRestockView() {
+        function legacy_initRestockView() {
             document.getElementById('formRestockProduct').reset();
             document.getElementById('restock_product_id').value = '';
             document.getElementById('restock_product_detail').classList.add('hidden');
@@ -4180,7 +4180,7 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
             }
         }
 
-        async function submitMobilePOSCheckout() {
+        async function legacy_submitMobilePOSCheckout() {
             if (posCart.length === 0) return;
             
             const requester = document.getElementById('mobile_pos_requester').value.trim();
@@ -9064,7 +9064,7 @@ function exportReportToExcel() {
                                 if (t.items && t.items.length > 0) {
                                     t.items.forEach(item => {
                                         const prodItem = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(item.product_id).trim().toLowerCase()) : null;
-                                        if (prodItem && prodItem.name.toLowerCase().includes(searchKeyword)) {
+                                        if (prodItem && prodItem.name && prodItem.name.toLowerCase().includes(searchKeyword)) {
                                             prodMatch = true;
                                         }
                                     });
@@ -10484,7 +10484,7 @@ function exportReportToExcel() {
             if (purchaseOverviewSearchQuery) {
                 filteredProductsAnalysis = filteredProductsAnalysis.filter(x => 
                     x.productId.toLowerCase().includes(purchaseOverviewSearchQuery) ||
-                    x.productName.toLowerCase().includes(purchaseOverviewSearchQuery)
+                    String(x.productName || '').toLowerCase().includes(purchaseOverviewSearchQuery)
                 );
             }
             if (purchaseOverviewCategoryFilter) {
@@ -10616,7 +10616,7 @@ function exportReportToExcel() {
             let filteredSupplierAnalysis = purchaseOverviewSuppliers;
             if (purchaseOverviewSearchQuery) {
                 filteredSupplierAnalysis = filteredSupplierAnalysis.filter(x => 
-                    x.supplierName.toLowerCase().includes(purchaseOverviewSearchQuery)
+                    String(x.supplierName || '').toLowerCase().includes(purchaseOverviewSearchQuery)
                 );
             }
 
