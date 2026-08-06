@@ -6541,7 +6541,10 @@ function exportReportToExcel() {
                                         <th class="p-4">PR Number</th>
                                         <th class="p-4">รหัสสินค้า</th>
                                         <th class="p-4">ชื่อสินค้า</th>
+                                        <th class="p-4">Supplier</th>
                                         <th class="p-4 text-center">จำนวนที่สั่ง</th>
+                                        <th class="p-4 text-right">ราคา/หน่วย</th>
+                                        <th class="p-4 text-right">ราคารวม</th>
                                         <th class="p-4 text-center rounded-tr-2xl" style="width: 110px;">จัดการ</th>
                                     </tr>
                                 </thead>
@@ -7589,6 +7592,7 @@ function exportReportToExcel() {
                             <div class="space-y-1">
                                 <div><span class="text-slate-400">รหัสสินค้า:</span> <span id="info-p-id" class="font-bold font-mono text-slate-700"></span></div>
                                 <div><span class="text-slate-400">ชื่อสินค้า:</span> <span id="info-p-name" class="font-bold text-slate-700"></span></div>
+                                <div><span class="text-slate-400">ซัพพลายเออร์เดิม:</span> <span id="info-p-supplier" class="font-bold text-amber-700"></span></div>
                             </div>
                         </div>
 
@@ -7860,7 +7864,7 @@ function exportReportToExcel() {
             if (filtered.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="9" class="p-12 text-center text-slate-400">
+                        <td colspan="10" class="p-12 text-center text-slate-400">
                             <div class="flex flex-col items-center justify-center">
                                 <i class="fa-solid fa-tasks text-slate-200 text-4xl mb-2"></i>
                                 <p class="text-sm font-bold text-slate-500">ไม่มีใบสั่งซื้อที่รอการอนุมัติหรือเตรียมสั่ง</p>
@@ -7896,12 +7900,12 @@ function exportReportToExcel() {
 
             tableBody.innerHTML = '';
 
-            // Render Section 1: Unprocessed items (Ungrouped)
+            // Render Section 1: Unprocessed items (Ungrouped Flat List)
             if (unprocessed.length > 0) {
                 // Section Header Row
                 const headerRow = `
                     <tr class="bg-blue-50/50 text-blue-800 font-bold border-y border-blue-100">
-                        <td colspan="9" class="px-4 py-2 text-xs">
+                        <td colspan="10" class="px-4 py-2 text-xs">
                             <div class="flex items-center gap-1.5">
                                 <i class="fa-solid fa-folder-open text-blue-500"></i>
                                 รายการใหม่ (ยังไม่ได้ดำเนินการจัดกลุ่ม)
@@ -7932,7 +7936,7 @@ function exportReportToExcel() {
                 // Section Header Row
                 const headerRow = `
                     <tr class="bg-slate-100 text-slate-700 font-bold border-y border-slate-200">
-                        <td colspan="9" class="px-4 py-2 text-xs">
+                        <td colspan="10" class="px-4 py-2 text-xs">
                             <div class="flex items-center gap-1.5">
                                 <i class="fa-solid fa-boxes-packing text-slate-500"></i>
                                 รายการสั่งซื้อแยกตามซัพพลายเออร์ (จัดกลุ่ม)
@@ -7946,7 +7950,7 @@ function exportReportToExcel() {
                 Object.keys(groupedBySupplier).sort().forEach(supplier => {
                     const supplierHeaderRow = `
                         <tr class="bg-amber-50/40 text-amber-800 font-bold border-b border-amber-100">
-                            <td colspan="9" class="px-6 py-1.5 text-[10px] uppercase tracking-wider">
+                            <td colspan="10" class="px-6 py-1.5 text-[10px] uppercase tracking-wider">
                                 <i class="fa-solid fa-truck-field mr-1.5"></i> Supplier: ${escapeHTML(supplier)}
                             </td>
                         </tr>
@@ -7972,6 +7976,9 @@ function exportReportToExcel() {
                     cost = prod ? (parseFloat(prod.cost) || 0) : 0;
                 }
                 const total = o.orderedQty * cost;
+                
+                const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
 
                 const rowHtml = `
                     <tr class="hover:bg-slate-50/80 transition-colors">
@@ -7980,6 +7987,7 @@ function exportReportToExcel() {
                         <td class="p-4 font-mono text-[11px] text-slate-500">${displayPr}</td>
                         <td class="p-4 font-mono text-[11px] text-slate-500">${escapeHTML(o.productId)}</td>
                         <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
+                        <td class="p-4 text-slate-600">${escapeHTML(supplier)}</td>
                         <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
                         <td class="p-4 text-right text-slate-600 font-mono">฿${cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td class="p-4 text-right text-slate-800 font-bold font-mono">฿${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
