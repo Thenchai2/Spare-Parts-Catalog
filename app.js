@@ -7279,8 +7279,9 @@ function exportReportToExcel() {
             }
 
             const pendingQty = order.orderedQty - order.receivedQty;
-            const prod = db.products ? db.products.find(p => String(p.id).trim() === String(order.productId).trim()) : null;
+            const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(order.productId).trim().toLowerCase()) : null;
             const unit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
+            const supplier = order.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
 
             Swal.fire({
                 title: '<i class="fa-solid fa-boxes-packing text-emerald-500 mr-2"></i>บันทึกการรับสินค้าเข้าคลัง',
@@ -7295,10 +7296,16 @@ function exportReportToExcel() {
                                 <p class="font-mono font-bold text-slate-700 truncate">${escapeHTML(order.poNumber)} (${escapeHTML(order.prNumber)})</p>
                             </div>
                         </div>
-                        <div class="bg-slate-50 p-3 rounded-xl border border-gray-150 mb-3">
-                            <p class="text-[10px] text-gray-400">รายการอะไหล่</p>
-                            <p class="font-bold text-slate-700 mt-0.5">${escapeHTML(order.productName)}</p>
-                            <p class="text-[10px] text-slate-500 font-mono mt-0.5">รหัส: ${escapeHTML(order.productId)}</p>
+                        <div class="bg-slate-50 p-3 rounded-xl border border-gray-150 mb-3 space-y-2">
+                            <div>
+                                <p class="text-[10px] text-gray-400">รายการอะไหล่</p>
+                                <p class="font-bold text-slate-700 mt-0.5">${escapeHTML(order.productName)}</p>
+                                <p class="text-[10px] text-slate-500 font-mono">รหัส: ${escapeHTML(order.productId)}</p>
+                            </div>
+                            <div class="pt-2 border-t border-slate-200/60">
+                                <p class="text-[10px] text-gray-400">ซัพพลายเออร์ที่ซื้อ</p>
+                                <p class="font-bold text-slate-700 mt-0.5">${escapeHTML(supplier)}</p>
+                            </div>
                         </div>
                         <div class="grid grid-cols-3 gap-3 text-center mb-4">
                             <div class="bg-white border border-slate-200 p-2.5 rounded-xl">
@@ -7316,7 +7323,7 @@ function exportReportToExcel() {
                         </div>
                         <div>
                             <label class="block font-semibold text-gray-600 mb-1.5">จำนวนสินค้าที่ได้รับครั้งนี้ (${escapeHTML(unit)})</label>
-                            <input type="number" id="swal-receive-qty" min="1" max="${pendingQty}" value="${pendingQty}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวน${escapeHTML(unit)}ที่ส่งมอบ">
+                            <input type="number" id="swal-receive-qty" min="1" max="${pendingQty}" value="" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวน${escapeHTML(unit)}ที่ส่งมอบ">
                         </div>
                     </div>
                 `,
@@ -7363,7 +7370,7 @@ function exportReportToExcel() {
                         });
                         const resultData = await res.json();
                         if (resultData.status === 'success') {
-                            showToast(`บันทึกรับสินค้าสำเร็จ +${receivedAmount} ชิ้น!`, 'success');
+                            showToast(`บันทึกรับสินค้าสำเร็จ +${receivedAmount} ${unit}!`, 'success');
                             await fetchData(true); // force refresh database
                             
                             // Re-render current view depending on which element is open
