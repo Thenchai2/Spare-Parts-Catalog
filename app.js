@@ -6912,6 +6912,16 @@ function exportReportToExcel() {
             // Filter: show only items with status "สั่งแล้ว" or "ค้างส่ง"
             let filtered = orders.filter(o => o.status === "สั่งแล้ว" || o.status === "ค้างส่ง");
 
+            // Sort by orderDate descending, then by poNumber descending (latest first)
+            filtered.sort((a, b) => {
+                const dateA = a.orderDate || '';
+                const dateB = b.orderDate || '';
+                if (dateA !== dateB) return dateB.localeCompare(dateA);
+                const poA = a.poNumber || '';
+                const poB = b.poNumber || '';
+                return poB.localeCompare(poA);
+            });
+
             // Filter by active tab: if "pending" (ค้างส่ง), show items where status is "ค้างส่ง"
             if (purchaseActiveTab === 'pending') {
                 filtered = filtered.filter(o => o.status === "ค้างส่ง");
@@ -6979,7 +6989,17 @@ function exportReportToExcel() {
             if (!tableBody) return;
 
             const orders = db.purchaseOrders || [];
-            let filtered = orders;
+            let filtered = [...orders];
+
+            // Sort by orderDate descending, then by poNumber descending (latest first)
+            filtered.sort((a, b) => {
+                const dateA = a.orderDate || '';
+                const dateB = b.orderDate || '';
+                if (dateA !== dateB) return dateB.localeCompare(dateA);
+                const poA = a.poNumber || '';
+                const poB = b.poNumber || '';
+                return poB.localeCompare(poA);
+            });
 
             // Filter by search query
             if (dashboardOrdersSearchQuery) {
@@ -7206,6 +7226,13 @@ function exportReportToExcel() {
 
             const orders = db.purchaseOrders || [];
             let filtered = orders.filter(o => o.status === "เตรียมสั่ง");
+
+            // Sort by poNumber descending (latest drafts first)
+            filtered.sort((a, b) => {
+                const poA = a.poNumber || '';
+                const poB = b.poNumber || '';
+                return poB.localeCompare(poA);
+            });
 
             if (draftOrdersSearchQuery) {
                 filtered = filtered.filter(o => 
@@ -7621,6 +7648,22 @@ function exportReportToExcel() {
             // 2. Processed items: status === "รออนุมัติ" (and not starting with "PO-DRF-")
             const processed = filtered.filter(o => o.status === "รออนุมัติ" && (!o.poNumber || o.poNumber.indexOf("PO-DRF-") !== 0));
 
+            // Sort both groups by date/poNumber descending (latest first)
+            unprocessed.sort((a, b) => {
+                const poA = a.poNumber || '';
+                const poB = b.poNumber || '';
+                return poB.localeCompare(poA);
+            });
+
+            processed.sort((a, b) => {
+                const dateA = a.orderDate || '';
+                const dateB = b.orderDate || '';
+                if (dateA !== dateB) return dateB.localeCompare(dateA);
+                const poA = a.poNumber || '';
+                const poB = b.poNumber || '';
+                return poB.localeCompare(poA);
+            });
+
             tableBody.innerHTML = '';
 
             // Render Section 1: Unprocessed items (Ungrouped)
@@ -7950,12 +7993,16 @@ function exportReportToExcel() {
                 const itemOrders = grouped[prodId];
                 const orderCount = itemOrders.length;
                 let totalVal = 0;
+                let latestDate = '';
                 itemOrders.forEach(o => {
                     let cost = parseFloat(o.unitCost) || 0;
                     if (cost === 0) {
                         cost = parseFloat(prod.cost) || 0;
                     }
                     totalVal += (o.orderedQty * cost);
+
+                    const d = o.orderDate || '';
+                    if (d > latestDate) latestDate = d;
                 });
 
                 cardData.push({
@@ -7964,9 +8011,13 @@ function exportReportToExcel() {
                     unit: prod.unit || 'ชิ้น',
                     orderCount: orderCount,
                     totalVal: totalVal,
-                    orders: itemOrders
+                    orders: itemOrders,
+                    latestDate: latestDate
                 });
             });
+
+            // Sort cards by the latest order date descending
+            cardData.sort((a, b) => b.latestDate.localeCompare(a.latestDate));
 
             if (cardData.length === 0) {
                 container.innerHTML = `
@@ -7984,6 +8035,16 @@ function exportReportToExcel() {
                 const cardId = `history-card-${index}`;
                 const detailId = `history-detail-${index}`;
                 const arrowId = `history-arrow-${index}`;
+
+                // Sort orders in-place by date/PO descending (latest first)
+                card.orders.sort((a, b) => {
+                    const dateA = a.orderDate || '';
+                    const dateB = b.orderDate || '';
+                    if (dateA !== dateB) return dateB.localeCompare(dateA);
+                    const poA = a.poNumber || '';
+                    const poB = b.poNumber || '';
+                    return poB.localeCompare(poA);
+                });
 
                 // Construct orders rows HTML
                 let ordersHtml = card.orders.map(o => {
