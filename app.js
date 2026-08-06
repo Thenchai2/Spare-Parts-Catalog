@@ -8067,12 +8067,12 @@ function exportReportToExcel() {
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
-                                <label class="block font-semibold text-slate-600 mb-1">PO Number (เลขที่ใบสั่งซื้อ)</label>
-                                <input type="text" id="swal-update-po" value="${escapeHTML(initialPo)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุ PO (เว้นว่างไว้เพื่อเป็นดราฟต์)">
-                            </div>
-                            <div>
                                 <label class="block font-semibold text-slate-600 mb-1">PR Number (เลขที่ขอซื้อ)</label>
                                 <input type="text" id="swal-update-pr" value="${escapeHTML(initialPr)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุ PR (เว้นว่างไว้เพื่อเป็นดราฟต์)">
+                            </div>
+                            <div>
+                                <label class="block font-semibold text-slate-600 mb-1">PO Number (เลขที่ใบสั่งซื้อ)</label>
+                                <input type="text" id="swal-update-po" value="${escapeHTML(initialPo)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุ PO (เว้นว่างไว้เพื่อเป็นดราฟต์)">
                             </div>
                         </div>
                     </div>
