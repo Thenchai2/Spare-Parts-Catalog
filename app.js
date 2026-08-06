@@ -7877,10 +7877,10 @@ function exportReportToExcel() {
             }
 
             // Grouping logic:
-            // 1. Unprocessed items: status === "เตรียมสั่ง" (or poNumber starts with "PO-DRF-")
-            const unprocessed = filtered.filter(o => o.status === "เตรียมสั่ง" || (o.poNumber && o.poNumber.indexOf("PO-DRF-") === 0));
-            // 2. Processed items: status === "รออนุมัติ" (and not starting with "PO-DRF-")
-            const processed = filtered.filter(o => o.status === "รออนุมัติ" && (!o.poNumber || o.poNumber.indexOf("PO-DRF-") !== 0));
+            // 1. Unprocessed items: status === "เตรียมสั่ง"
+            const unprocessed = filtered.filter(o => o.status === "เตรียมสั่ง");
+            // 2. Processed items: status === "รออนุมัติ"
+            const processed = filtered.filter(o => o.status === "รออนุมัติ");
 
             // Sort both groups by date/poNumber descending (latest first)
             unprocessed.sort((a, b) => {
