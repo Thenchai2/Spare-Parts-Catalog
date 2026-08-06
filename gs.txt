@@ -243,15 +243,6 @@ function initDatabase() {
     const sheet = ss.insertSheet("PurchaseOrders");
     sheet.appendRow(["PO_Number", "PR_Number", "Product_ID", "Product_Name", "Order_Date", "Ordered_Qty", "Received_Qty", "Last_Received_Date", "Status", "Unit_Cost", "Total_Cost", "Supplier"]);
     sheet.getRange("1:1").setFontWeight("bold").setBackground("#d9d2e9");
-    
-    // ข้อมูลเริ่มต้นสำหรับทดสอบระบบจัดซื้อจริง
-    sheet.appendRow(["PO-2026-001", "PR-2026-012", "P-001", "ลูกปืนตลับ SKF 6204-2Z", "2026-07-25", 20, 15, "2026-07-28", "ค้างส่ง", 120, 2400, "ซัพพลายเออร์ A"]);
-    sheet.appendRow(["PO-2026-002", "PR-2026-015", "P-002", "สายพานร่อง V-Belt B-45", "2026-07-25", 10, 0, "", "สั่งแล้ว", 80, 800, "ซัพพลายเออร์ B"]);
-    sheet.appendRow(["PO-2026-003", "PR-2026-018", "P-003", "ฟิวส์คอนโทรล 2A 250V", "2026-07-24", 50, 50, "2026-07-29", "ได้รับครบ", 5, 250, "ซัพพลายเออร์ A"]);
-    sheet.appendRow(["PO-2026-004", "PR-2026-020", "P-004", "ซีลยางโอริง NBR 70", "2026-07-24", 100, 40, "2026-07-27", "ค้างส่ง", 15, 1500, "ซัพพลายเออร์ C"]);
-    sheet.appendRow(["PO-2026-005", "PR-2026-022", "P-005", "โซ่ส่งกำลัง เบอร์ 50", "2026-07-23", 5, 0, "", "รออนุมัติ", 450, 2250, "ซัพพลายเออร์ B"]);
-    sheet.appendRow(["PO-2026-006", "PR-2026-024", "P-006", "วาล์วลม Solenoid 220VAC", "2026-07-22", 12, 12, "2026-07-26", "ได้รับครบ", 650, 7800, "ซัพพลายเออร์ D"]);
-    sheet.appendRow(["PO-2026-007", "PR-2026-025", "P-007", "สวิตช์ปุ่มกด Emergency Stop", "2026-07-21", 8, 0, "", "เตรียมสั่ง", 180, 1440, "ซัพพลายเออร์ C"]);
   } else {
     const lastCol = poSheet.getLastColumn();
     if (lastCol < 10) poSheet.getRange(1, 10).setValue("Unit_Cost");
