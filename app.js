@@ -7033,6 +7033,8 @@ function exportReportToExcel() {
             }
 
             const pendingQty = order.orderedQty - order.receivedQty;
+            const prod = db.products ? db.products.find(p => String(p.id).trim() === String(order.productId).trim()) : null;
+            const unit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
 
             Swal.fire({
                 title: '<i class="fa-solid fa-boxes-packing text-emerald-500 mr-2"></i>บันทึกการรับสินค้าเข้าคลัง',
@@ -7067,8 +7069,8 @@ function exportReportToExcel() {
                             </div>
                         </div>
                         <div>
-                            <label class="block font-semibold text-gray-600 mb-1.5">จำนวนสินค้าที่ได้รับครั้งนี้ (ชิ้น)</label>
-                            <input type="number" id="swal-receive-qty" min="1" max="${pendingQty}" value="${pendingQty}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวนชิ้นที่ส่งมอบ">
+                            <label class="block font-semibold text-gray-600 mb-1.5">จำนวนสินค้าที่ได้รับครั้งนี้ (${escapeHTML(unit)})</label>
+                            <input type="number" id="swal-receive-qty" min="1" max="${pendingQty}" value="${pendingQty}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวน${escapeHTML(unit)}ที่ส่งมอบ">
                         </div>
                     </div>
                 `,
@@ -7092,7 +7094,7 @@ function exportReportToExcel() {
                         return false;
                     }
                     if (receiveVal > pendingQty) {
-                        Swal.showValidationMessage(`จำนวนรับเข้าเกินยอดค้างส่ง (${pendingQty} ชิ้น)`);
+                        Swal.showValidationMessage(`จำนวนรับเข้าเกินยอดค้างส่ง (${pendingQty} ${unit})`);
                         return false;
                     }
                     return receiveVal;
@@ -7305,6 +7307,12 @@ function exportReportToExcel() {
             if (infoUnit) infoUnit.innerText = String(prod.unit || 'ชิ้น');
             if (infoSupplier) infoSupplier.innerText = String(prod.supplier || 'ไม่ระบุ');
 
+            const swalOrderUnit = document.getElementById('swal-order-unit');
+            if (swalOrderUnit) swalOrderUnit.innerText = String(prod.unit || 'ชิ้น');
+
+            const qtyInput = document.getElementById('swal-order-qty');
+            if (qtyInput) qtyInput.placeholder = `ระบุจำนวน${prod.unit || 'ชิ้น'}`;
+
             const searchInput = document.getElementById('swal-prod-search');
             if (searchInput) searchInput.value = String(prod.name);
 
@@ -7335,7 +7343,7 @@ function exportReportToExcel() {
                         </div>
 
                         <div>
-                            <label class="block font-semibold text-gray-600 mb-1.5 text-xs">จำนวนที่ต้องการสั่งซื้อ (ชิ้น)</label>
+                            <label class="block font-semibold text-gray-600 mb-1.5 text-xs">จำนวนที่ต้องการสั่งซื้อ (<span id="swal-order-unit">ชิ้น</span>)</label>
                             <input type="number" id="swal-order-qty" min="1" value="1" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุจำนวนชิ้น">
                         </div>
                     </div>
@@ -7354,6 +7362,10 @@ function exportReportToExcel() {
                 },
                 didOpen: () => {
                     currentSelectedSwalProduct = null;
+                    const swalOrderUnit = document.getElementById('swal-order-unit');
+                    if (swalOrderUnit) swalOrderUnit.innerText = 'ชิ้น';
+                    const qtyInput = document.getElementById('swal-order-qty');
+                    if (qtyInput) qtyInput.placeholder = 'ระบุจำนวนชิ้น';
                 },
                 preConfirm: () => {
                     if (!currentSelectedSwalProduct) {
@@ -7402,6 +7414,9 @@ function exportReportToExcel() {
             const order = orders.find(o => poNumber ? o.poNumber === poNumber : (o.productId === productId && o.status === "เตรียมสั่ง"));
             if (!order) return;
 
+            const prod = db.products ? db.products.find(p => String(p.id).trim() === String(order.productId).trim()) : null;
+            const unit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
+
             Swal.fire({
                 title: '<i class="fa-solid fa-pen-to-square text-blue-600 mr-2"></i>แก้ไขจำนวนสั่งซื้อ',
                 html: `
@@ -7411,7 +7426,7 @@ function exportReportToExcel() {
                             <p class="text-[10px] text-slate-400 font-mono mt-0.5">รหัสสินค้า: ${escapeHTML(order.productId)}</p>
                         </div>
                         <div>
-                            <label class="block font-semibold text-gray-600 mb-1.5">จำนวนที่สั่งใหม่ (ชิ้น)</label>
+                            <label class="block font-semibold text-gray-600 mb-1.5">จำนวนที่สั่งใหม่ (${escapeHTML(unit)})</label>
                             <input type="number" id="swal-edit-qty" min="1" value="${order.orderedQty}" class="swal2-input !mx-0 !w-full !text-xs !h-9">
                         </div>
                     </div>
