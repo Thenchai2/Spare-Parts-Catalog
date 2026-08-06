@@ -72,10 +72,6 @@ function doPost(e) {
       response.data = restockProduct(payload);
       response.message = 'เติมสต็อกสำเร็จ';
     }
-    else if (action === 'bulkRestockProducts') {
-      response.data = bulkRestockProducts(payload);
-      response.message = 'ปรับสต็อกหลายรายการสำเร็จ';
-    }
     else if (action === 'receivePurchaseGoods') {
       response.data = receivePurchaseGoods(payload);
       response.message = 'บันทึกการรับสินค้าเข้าคลังสำเร็จ';
@@ -151,10 +147,6 @@ function doPost(e) {
     else if (action === 'deleteManual') {
       deleteManual(payload.id);
       response.message = 'ลบคู่มือสำเร็จ';
-    }
-    else if (action === 'deleteAllRestockHistory') {
-      deleteAllRestockHistory();
-      response.message = 'ล้างประวัติการปรับปรุงสต็อกทั้งหมดสำเร็จ';
     }
     else if (action === 'backupFirebaseToDrive') {
       backupFirebaseToDrive();
@@ -266,6 +258,27 @@ function initDatabase() {
     if (lastCol < 11) poSheet.getRange(1, 11).setValue("Total_Cost");
     if (lastCol < 12) poSheet.getRange(1, 12).setValue("Supplier");
     poSheet.getRange("1:1").setFontWeight("bold");
+  }
+  
+  // ตรวจสอบและสร้างชีต Mappings
+  if (!ss.getSheetByName("Mappings")) {
+    const sheet = ss.insertSheet("Mappings");
+    sheet.appendRow(["Product_ID", "Machine_ID"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#d9ead3");
+  }
+
+  // ตรวจสอบและสร้างชีต Lots
+  if (!ss.getSheetByName("Lots")) {
+    const sheet = ss.insertSheet("Lots");
+    sheet.appendRow(["Lot_ID", "Product_ID", "Cost", "Price_A", "Price_B", "Price_C", "Initial_Qty", "Remaining_Qty", "Created_At", "Note"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#fff2cc");
+  }
+
+  // ตรวจสอบและสร้างชีต Users
+  if (!ss.getSheetByName("Users")) {
+    const sheet = ss.insertSheet("Users");
+    sheet.appendRow(["Full_Name", "Department", "Phone", "Email", "Password_Hash", "Role", "Price_Level", "User_Type"]);
+    sheet.getRange("1:1").setFontWeight("bold").setBackground("#f4cccc");
   }
 }
 
@@ -1464,119 +1477,6 @@ function restockProduct(payload) {
   }
 }
 
-function bulkRestockProducts(payload) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (e) {
-    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
-  }
-  
-  try {
-    const items = payload.items || [];
-    if (!Array.isArray(items) || items.length === 0) return { count: 0 };
-    
-    const db = getFirebaseData("") || {};
-    let products = db.appData?.products || [];
-    let lots = db.lots || [];
-    let transactions = db.transactions || [];
-    
-    let lastTxId = 0;
-    if (transactions.length > 0) {
-      const lastTx = transactions[transactions.length - 1];
-      lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
-    }
-    
-    const nowStamp = Date.now();
-    const dateTimeStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss");
-    let updatedCount = 0;
-    
-    items.forEach((itemPayload, idx) => {
-      const product = products.find(p => String(p.id).trim() === String(itemPayload.id).trim());
-      if (!product) return;
-      
-      const qty = parseFloat(itemPayload.qty) || 0;
-      const cost = (itemPayload.cost !== undefined && itemPayload.cost !== "") ? parseFloat(itemPayload.cost) : product.cost;
-      const pA = (itemPayload.price_a !== undefined && itemPayload.price_a !== "") ? parseFloat(itemPayload.price_a) : product.price_a;
-      const pB = (itemPayload.price_b !== undefined && itemPayload.price_b !== "") ? parseFloat(itemPayload.price_b) : product.price_b;
-      const pC = (itemPayload.price_c !== undefined && itemPayload.price_c !== "") ? parseFloat(itemPayload.price_c) : product.price_c;
-      
-      const lotId = "LOT-" + itemPayload.id + "-" + (nowStamp + idx);
-      lots.push({
-        lot_id: lotId,
-        product_id: itemPayload.id,
-        cost: cost,
-        price_a: pA,
-        price_b: pB,
-        price_c: pC,
-        initial_qty: qty,
-        remaining_qty: qty,
-        created_at: dateTimeStr,
-        note: itemPayload.note || "ปรับยอดสต็อกหลายรายการ"
-      });
-      
-      product.stock_qty = (parseFloat(product.stock_qty) || 0) + qty;
-      product.cost = cost;
-      product.price_a = pA;
-      product.price_b = pB;
-      product.price_c = pC;
-      
-      lastTxId++;
-      const nextTxId = "TX-" + String(lastTxId).padStart(6, '0');
-      
-      const newRestockTransaction = {
-        id: nextTxId,
-        requester: itemPayload.requester,
-        department: itemPayload.department || "สโตร์ (Restock Batch)",
-        machine_id: "RESTOCK",
-        serial_number: "",
-        total_price: 0,
-        note: itemPayload.note || "ปรับยอดสต็อกหลายรายการ",
-        created_at: dateTimeStr,
-        status: "Restock",
-        items: [{
-          lot_id: lotId,
-          product_id: itemPayload.id,
-          qty: qty,
-          cost: cost,
-          price: 0
-        }]
-      };
-      transactions.push(newRestockTransaction);
-      updatedCount++;
-    });
-    
-    const updates = {
-      "appData/products": products,
-      "lots": lots,
-      "transactions": transactions
-    };
-    patchFirebaseData("", updates);
-    
-    return { count: updatedCount };
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function deleteAllRestockHistory() {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (e) {
-    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
-  }
-  
-  try {
-    const db = getFirebaseData("") || {};
-    let transactions = db.transactions || [];
-    transactions = transactions.filter(t => t.status !== 'Restock');
-    updateFirebaseData("transactions", transactions);
-  } finally {
-    lock.releaseLock();
-  }
-}
-
 function receivePurchaseGoods(payload) {
   const lock = LockService.getScriptLock();
   try {
@@ -2203,6 +2103,44 @@ function backupFirebaseToSheets() {
       ]);
     });
   }
+
+  // 7. Mappings Sheet
+  const mappings = getFirebaseData("mappings") || [];
+  const mapSheet = ss.getSheetByName("Mappings");
+  if (mapSheet) {
+    mapSheet.clearContents();
+    mapSheet.appendRow(["Product_ID", "Machine_ID"]);
+    mappings.forEach(m => {
+      mapSheet.appendRow([m.product_id, m.machine_id]);
+    });
+  }
+
+  // 8. Lots Sheet
+  const lots = getFirebaseData("lots") || [];
+  const lotsSheet = ss.getSheetByName("Lots");
+  if (lotsSheet) {
+    lotsSheet.clearContents();
+    lotsSheet.appendRow(["Lot_ID", "Product_ID", "Cost", "Price_A", "Price_B", "Price_C", "Initial_Qty", "Remaining_Qty", "Created_At", "Note"]);
+    lots.forEach(l => {
+      lotsSheet.appendRow([
+        l.lot_id, l.product_id, l.cost || 0, l.price_a || 0, l.price_b || 0, l.price_c || 0,
+        l.initial_qty || 0, l.remaining_qty || 0, l.created_at || "", l.note || ""
+      ]);
+    });
+  }
+
+  // 9. Users Sheet
+  const users = getFirebaseData("users") || [];
+  const usersSheet = ss.getSheetByName("Users");
+  if (usersSheet) {
+    usersSheet.clearContents();
+    usersSheet.appendRow(["Full_Name", "Department", "Phone", "Email", "Password_Hash", "Role", "Price_Level", "User_Type"]);
+    users.forEach(u => {
+      usersSheet.appendRow([
+        u.fullName, u.department, u.phone || "", u.email, u.passwordHash, u.role || "user", u.priceLevel || "A", u.userType || "insource"
+      ]);
+    });
+  }
 }
 
 // ===== Spreadsheet Custom Menu Integration =====
@@ -2372,6 +2310,68 @@ function menuUploadSheetsToFirebase() {
           });
         }
         setFirebaseData("transactions", transactions);
+      }
+    }
+
+    // 7. อ่าน Mappings จาก Sheet
+    const mapSheet = ss.getSheetByName("Mappings");
+    if (mapSheet) {
+      const mapData = mapSheet.getDataRange().getValues();
+      const mappings = [];
+      if (mapData.length > 1) {
+        for (let i = 1; i < mapData.length; i++) {
+          mappings.push({
+            product_id: String(mapData[i][0]).trim(),
+            machine_id: String(mapData[i][1]).trim()
+          });
+        }
+        setFirebaseData("mappings", mappings);
+      }
+    }
+
+    // 8. อ่าน Lots จาก Sheet
+    const lotsSheet = ss.getSheetByName("Lots");
+    if (lotsSheet) {
+      const lotsData = lotsSheet.getDataRange().getValues();
+      const lots = [];
+      if (lotsData.length > 1) {
+        for (let i = 1; i < lotsData.length; i++) {
+          lots.push({
+            lot_id: String(lotsData[i][0]).trim(),
+            product_id: String(lotsData[i][1]).trim(),
+            cost: parseFloat(lotsData[i][2]) || 0,
+            price_a: parseFloat(lotsData[i][3]) || 0,
+            price_b: parseFloat(lotsData[i][4]) || 0,
+            price_c: parseFloat(lotsData[i][5]) || 0,
+            initial_qty: parseFloat(lotsData[i][6]) || 0,
+            remaining_qty: parseFloat(lotsData[i][7]) || 0,
+            created_at: String(lotsData[i][8]),
+            note: String(lotsData[i][9])
+          });
+        }
+        setFirebaseData("lots", lots);
+      }
+    }
+
+    // 9. อ่าน Users จาก Sheet
+    const usersSheet = ss.getSheetByName("Users");
+    if (usersSheet) {
+      const usersData = usersSheet.getDataRange().getValues();
+      const users = [];
+      if (usersData.length > 1) {
+        for (let i = 1; i < usersData.length; i++) {
+          users.push({
+            fullName: String(usersData[i][0]).trim(),
+            department: String(usersData[i][1]).trim(),
+            phone: String(usersData[i][2]).trim(),
+            email: String(usersData[i][3]).trim().toLowerCase(),
+            passwordHash: String(usersData[i][4]).trim(),
+            role: String(usersData[i][5]).trim() || "user",
+            priceLevel: String(usersData[i][6]).trim() || "A",
+            userType: String(usersData[i][7]).trim() || "insource"
+          });
+        }
+        setFirebaseData("users", users);
       }
     }
 

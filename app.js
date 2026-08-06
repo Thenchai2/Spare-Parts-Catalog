@@ -1113,9 +1113,11 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                             && cached.data.products.length > 0;
 
                         if (age < LS_CACHE_TTL && hasData) {
-                            // ข้อมูล cache ยังสดและไม่ว่าง → แสดงทันที และไม่จำเป็นต้องดึงซ้ำในฉากหลังเพื่อประหยัดโควต้า
+                            // ข้อมูล cache ยังสดและไม่ว่าง → แสดงทันที
                             db = cached.data;
                             updateAllViews();
+                            // ดึงข้อมูลใหม่เบื้องหลัง (ไม่แสดง spinner)
+                            _fetchFromServer(true);
                             return;
                         }
                     }
@@ -1757,9 +1759,9 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
 
                     const costVal = parseFloat(String(p.cost).replace(/,/g, '')) || 0;
                     const costStr = costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                    const pA = fNumber(p.price_a, costVal * 2.1);
-                    const pB = fNumber(p.price_b, costVal * 1.7);
-                    const pC = fNumber(p.price_c, costVal * 1.3);
+                    const pA = fNumberM(p.price_a, costVal * 2.1);
+                    const pB = fNumberM(p.price_b, costVal * 1.7);
+                    const pC = fNumberM(p.price_c, costVal * 1.3);
 
                     let costLineHtml = (isShowCostInCatalog && isLoggedIn) ? `<div class="flex justify-between items-center text-sm bg-red-50 px-2 py-1.5 rounded-lg mb-3 border border-red-100"><span class="text-red-700 font-medium">ราคาต้นทุน:</span><span class="font-bold text-red-600 text-base">฿${costStr} ต่อ ${escapeHTML(p.unit || 'ชิ้น')}</span></div>` : '';
 
@@ -2207,59 +2209,52 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 return;
             }
 
-            const confirmResult = await Swal.fire({
-                title: 'ยืนยันการบันทึกปรับยอดสต็อก',
-                html: `คุณต้องการบันทึกการปรับยอดสต็อกอะไหล่จำนวน <b class="text-blue-600 font-bold">${itemsToUpdate.length} รายการ</b> ใช่หรือไม่?`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#2563eb',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: '<i class="fa-solid fa-floppy-disk mr-1.5"></i> ยืนยันบันทึก',
-                cancelButtonText: 'ยกเลิก',
-                reverseButtons: true,
-                customClass: {
-                    popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
-                    confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-blue-500/30',
-                    cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
-                }
-            });
-
-            if (!confirmResult.isConfirmed) return;
+            const confirmMsg = `ต้องการบันทึกการปรับยอดสต็อกอะไหล่จำนวน ${itemsToUpdate.length} รายการ ใช่หรือไม่?`;
+            if (!confirm(confirmMsg)) return;
 
             const operator = (isLoggedIn && currentUser && currentUser.fullName) ? currentUser.fullName : 'สโตร์';
 
-            showLoading(`กำลังบันทึกการปรับยอดสต็อกอะไหล่ ${itemsToUpdate.length} รายการ...`);
+            showLoading(`กำลังบันทึกการปรับยอดสต็อก (0/${itemsToUpdate.length})...`);
 
-            const batchItems = itemsToUpdate.map(item => ({
-                id: item.product.id,
-                qty: item.diff,
-                requester: operator,
-                department: "สโตร์ (ปรับสต็อกหลายรายการ)",
-                note: `ปรับยอดสต็อกอะไหล่หลายรายการ (จาก ${item.currentQty} เป็น ${item.newQty})`
-            }));
+            let successCount = 0;
+            let failCount = 0;
 
-            let isSuccess = false;
-            try {
-                let res = await fetch(API_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'bulkRestockProducts',
-                        payload: { items: batchItems }
-                    })
-                });
-                let result = await res.json();
-                if (result.status === 'success') {
-                    isSuccess = true;
-                    showToast(`บันทึกการปรับปรุงสต็อกสำเร็จ ${itemsToUpdate.length} รายการ`, 'success');
-                    await fetchData(false);
-                } else {
-                    showToast('เกิดข้อผิดพลาด: ' + (result.message || 'ไม่สามารถปรับปรุงสต็อกได้'), 'error');
+            for (let i = 0; i < itemsToUpdate.length; i++) {
+                const item = itemsToUpdate[i];
+                showLoading(`กำลังบันทึกการปรับยอดสต็อก (${i + 1}/${itemsToUpdate.length})...`);
+
+                const payload = {
+                    id: item.product.id,
+                    qty: item.diff,
+                    requester: operator,
+                    department: "สโตร์ (ปรับสต็อกหลายรายการ)",
+                    note: `ปรับยอดสต็อกอะไหล่หลายรายการ (จาก ${item.currentQty} เป็น ${item.newQty})`
+                };
+
+                try {
+                    let res = await fetch(API_URL, {
+                        method: 'POST',
+                        body: JSON.stringify({ action: 'restockProduct', payload: payload })
+                    });
+                    let result = await res.json();
+                    if (result.status === 'success') {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (err) {
+                    console.error(err);
+                    failCount++;
                 }
-            } catch (err) {
-                console.error(err);
+            }
+
+            hideLoading();
+
+            if (successCount > 0) {
+                showToast(`บันทึกการปรับปรุงสต็อกสำเร็จ ${successCount} รายการ ${failCount > 0 ? `(ล้มเหลว ${failCount} รายการ)` : ''}`, failCount > 0 ? 'warning' : 'success');
+                await fetchData(false);
+            } else {
                 showToast('เกิดข้อผิดพลาด ไม่สามารถปรับปรุงสต็อกได้', 'error');
-            } finally {
-                hideLoading();
             }
 
             isBulkAdjusting = false;
@@ -2544,25 +2539,6 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 return;
             }
             
-            const confirmResult = await Swal.fire({
-                title: 'ยืนยันการปรับปรุงสต็อก',
-                html: `คุณต้องการบันทึก <b class="text-blue-600 font-bold">${escapeHTML(transactionNote)}</b> สำหรับอะไหล่รหัส <b class="text-gray-900 font-mono font-bold">${escapeHTML(productId)}</b> ใช่หรือไม่?`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#2563eb',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: '<i class="fa-solid fa-floppy-disk mr-1.5"></i> ยืนยันบันทึก',
-                cancelButtonText: 'ยกเลิก',
-                reverseButtons: true,
-                customClass: {
-                    popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
-                    confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-blue-500/30',
-                    cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
-                }
-            });
-
-            if (!confirmResult.isConfirmed) return;
-
             const payload = {
                 id: productId,
                 qty: qtyToSend,
@@ -2570,7 +2546,7 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 department: "สโตร์ (ปรับปรุงสต็อก)",
                 note: transactionNote
             };
-
+            
             showLoading('กำลังบันทึกข้อมูลการปรับปรุงสต็อก...');
             try {
                 let res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'restockProduct', payload: payload }) });
@@ -2737,9 +2713,9 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
             const pdPriceBBox = document.getElementById('pd_price_b_box');
             const pdPriceCBox = document.getElementById('pd_price_c_box');
             
-            document.getElementById('pd_price_a').innerText = '฿' + fNumber(p.price_a, costVal * 2.1);
-            document.getElementById('pd_price_b').innerText = '฿' + fNumber(p.price_b, costVal * 1.7);
-            document.getElementById('pd_price_c').innerText = '฿' + fNumber(p.price_c, costVal * 1.3);
+            document.getElementById('pd_price_a').innerText = '฿' + fNumberM(p.price_a, costVal * 2.1);
+            document.getElementById('pd_price_b').innerText = '฿' + fNumberM(p.price_b, costVal * 1.7);
+            document.getElementById('pd_price_c').innerText = '฿' + fNumberM(p.price_c, costVal * 1.3);
             
             if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
                 const userPriceLevel = currentUser.priceLevel || 'A';
@@ -2760,7 +2736,7 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                     if (bLabel) bLabel.innerText = 'ราคา';
                     const cLabel = pdPriceCBox.querySelector('p');
                     if (cLabel) cLabel.innerText = 'ราคา';
-                    document.getElementById('pd_price_a').innerText = '฿' + fNumber(p.price_a, costVal * 2.1);
+                    document.getElementById('pd_price_a').innerText = '฿' + fNumberM(p.price_a, costVal * 2.1);
                 }
             } else {
                 pdPriceABox.classList.remove('hidden');
@@ -2987,25 +2963,6 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
                 return;
             }
             
-            const confirmResult = await Swal.fire({
-                title: 'ยืนยันการเติมสต็อกสินค้า',
-                html: `คุณต้องการบันทึกเติมสต็อกอะไหล่รหัส <b class="text-gray-900 font-mono font-bold">${escapeHTML(productId)}</b> จำนวน <b class="text-blue-600 font-bold">${qty}</b> ชิ้น ใช่หรือไม่?`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#2563eb',
-                cancelButtonColor: '#64748b',
-                confirmButtonText: '<i class="fa-solid fa-floppy-disk mr-1.5"></i> ยืนยันเติมสต็อก',
-                cancelButtonText: 'ยกเลิก',
-                reverseButtons: true,
-                customClass: {
-                    popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
-                    confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-blue-500/30',
-                    cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
-                }
-            });
-
-            if (!confirmResult.isConfirmed) return;
-
             const payload = {
                 id: productId,
                 qty: qty,
@@ -3359,6 +3316,8 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
             const alreadyMapped = new Set(db.mappings.filter(m => m.machine_id == machineId).map(m => String(m.product_id)));
             
             let filteredProducts = db.products.filter(p => {
+                const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
+                if (isCancelled) return false;
                 const textToSearch = `${p.id} ${p.name}`.toLowerCase();
                 const isMatchKeyword = keywords.every(kw => textToSearch.includes(kw));
                 const isMatchCategory = selectedCategory === 'all' || p.category === selectedCategory;
@@ -3475,9 +3434,9 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
             filteredProducts.forEach((p, index) => {
                 const costVal = parseFloat(String(p.cost).replace(/,/g, '')) || 0;
                 const costStr = costVal.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                const pA = fNumber(p.price_a, costVal * 2.1);
-                const pB = fNumber(p.price_b, costVal * 1.7);
-                const pC = fNumber(p.price_c, costVal * 1.3);
+                const pA = fNumberM(p.price_a, costVal * 2.1);
+                const pB = fNumberM(p.price_b, costVal * 1.7);
+                const pC = fNumberM(p.price_c, costVal * 1.3);
                 
                 const isCancelled = p.note && (p.note.trim() === 'ยกเลิกใช้' || p.note.includes('ยกเลิกใช้'));
 
@@ -3707,7 +3666,7 @@ const FIREBASE_DB_URL = 'https://ltd-laundry-default-rtdb.asia-southeast1.fireba
             filtered.forEach(p => {
                 let imgSource = p.image_url ? p.image_url : `https://placehold.co/200x150/f8fafc/94a3b8?text=No+Image`;
                 const costVal = parseFloat(String(p.cost).replace(/,/g, '')) || 0;
-                const pA = fNumber(p.price_a, costVal * 2.1);
+                const pA = fNumberM(p.price_a, costVal * 2.1);
                 
                 // เช็คยอดสต็อกและจัดแต่งหน้าตา
                 let cardClass = "";
@@ -4838,13 +4797,6 @@ function renderRestockHistoryTable() {
     if (!tbody) return;
     tbody.innerHTML = '';
     
-    const isAdmin = isLoggedIn && currentUser && currentUser.role === 'ADMIN';
-    const btnDeleteAll = document.getElementById('btnDeleteAllRestockHistory');
-    const thAction = document.getElementById('thRestockHistoryAction');
-    
-    if (btnDeleteAll) btnDeleteAll.classList.toggle('hidden', !isAdmin);
-    if (thAction) thAction.classList.toggle('hidden', !isAdmin);
-    
     const searchKeyword = document.getElementById('restock_history_search').value.toLowerCase();
     const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
     
@@ -4859,7 +4811,6 @@ function renderRestockHistoryTable() {
             const unit = prod ? prod.unit : 'ชิ้น';
             
             historyList.push({
-                txId: t.id,
                 productId: item.product_id,
                 productName: prodName,
                 qty: item.qty,
@@ -4873,14 +4824,13 @@ function renderRestockHistoryTable() {
     
     if (keywords.length > 0) {
         historyList = historyList.filter(h => {
-            const txt = `${h.txId} ${h.productId} ${h.productName} ${h.operator} ${h.note}`.toLowerCase();
+            const txt = `${h.productId} ${h.productName}`.toLowerCase();
             return keywords.every(kw => txt.includes(kw));
         });
     }
     
-    const colCount = isAdmin ? 9 : 8;
     if (historyList.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${colCount}" class="p-10 text-center text-gray-400">ไม่พบประวัติการปรับปรุงสต็อก</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="p-10 text-center text-gray-400">ไม่พบประวัติการปรับปรุงสต็อก</td></tr>`;
         return;
     }
     
@@ -4895,16 +4845,6 @@ function renderRestockHistoryTable() {
         }
         
         const absQty = Math.abs(h.qty);
-        let actionTd = '';
-        if (isAdmin) {
-            actionTd = `
-                <td class="p-4 text-center">
-                    <button onclick="requestDeleteRestockHistoryItem('${escapeForJS(h.txId)}')" class="text-red-600 hover:text-white bg-red-50 hover:bg-red-600 px-3 py-1.5 rounded-xl text-xs font-bold transition inline-flex items-center gap-1 shadow-sm" title="ลบรายการนี้">
-                        <i class="fa-solid fa-trash"></i> ลบ
-                    </button>
-                </td>
-            `;
-        }
         
         let tr = `
             <tr class="hover:bg-slate-50 transition border-b border-gray-100 last:border-0">
@@ -4920,109 +4860,10 @@ function renderRestockHistoryTable() {
                 <td class="p-4 text-center text-gray-500">${escapeHTML(h.unit)}</td>
                 <td class="p-4 text-gray-700 font-semibold">${escapeHTML(h.operator)}</td>
                 <td class="p-4 text-gray-500 text-xs">${escapeHTML(h.note)}</td>
-                ${actionTd}
             </tr>
         `;
         tbody.insertAdjacentHTML('beforeend', tr);
     });
-}
-
-async function requestDeleteRestockHistoryItem(txId) {
-    if (!isLoggedIn || !currentUser || currentUser.role !== 'ADMIN') {
-        showToast('คุณไม่มีสิทธิ์ดำเนินการนี้', 'error');
-        return;
-    }
-    
-    const confirmResult = await Swal.fire({
-        title: 'ยืนยันการลบประวัติการปรับปรุงสต็อก',
-        html: `คุณต้องการลบประวัติการปรับปรุงสต็อกรายการนี้ (<b class="font-mono text-blue-600">${escapeHTML(txId)}</b>) ใช่หรือไม่?<br><span class="text-xs text-amber-600 font-bold">* หมายเหตุ: เป็นการลบบันทึกประวัติเท่านั้น ไม่กระทบกับจำนวนสต็อกคงเหลือปัจจุบัน</span>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: '<i class="fa-solid fa-trash-can mr-1"></i> ลบรายการนี้',
-        cancelButtonText: 'ยกเลิก',
-        reverseButtons: true,
-        customClass: {
-            popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
-            confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-red-500/30',
-            cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
-        }
-    });
-
-    if (!confirmResult.isConfirmed) return;
-
-    showLoading('กำลังลบรายการประวัติ...');
-    try {
-        let res = await fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'deleteTransaction',
-                payload: { transaction_id: txId }
-            })
-        });
-        let result = await res.json();
-        if (result.status === 'success') {
-            showToast('ลบรายการประวัติเรียบร้อยแล้ว', 'success');
-            await initRestockHistoryView();
-        } else {
-            showToast('เกิดข้อผิดพลาด: ' + (result.message || 'ไม่สามารถลบรายการได้'), 'error');
-        }
-    } catch (err) {
-        console.error(err);
-        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function requestClearAllRestockHistory() {
-    if (!isLoggedIn || !currentUser || currentUser.role !== 'ADMIN') {
-        showToast('คุณไม่มีสิทธิ์ดำเนินการนี้', 'error');
-        return;
-    }
-    
-    const confirmResult = await Swal.fire({
-        title: '⚠️ ยืนยันล้างประวัติการปรับปรุงสต็อกทั้งหมด',
-        html: `คุณต้องการ<b class="text-red-600">ลบประวัติการปรับปรุงสต็อกสินค้าทั้งหมด</b>ในระบบ ใช่หรือไม่?<br><span class="text-xs text-red-500 font-bold">* การดำเนินการนี้ไม่สามารถย้อนกลับได้ (จำนวนสต็อกคงเหลือปัจจุบันจะไม่เปลี่ยนแปลง)</span>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: '<i class="fa-solid fa-trash-can mr-1"></i> ยืนยันล้างทั้งหมด',
-        cancelButtonText: 'ยกเลิก',
-        reverseButtons: true,
-        customClass: {
-            popup: 'rounded-3xl shadow-2xl p-6 border border-slate-100',
-            confirmButton: 'rounded-xl font-bold px-6 py-2.5 shadow-lg shadow-red-500/30',
-            cancelButton: 'rounded-xl font-semibold px-5 py-2.5',
-        }
-    });
-
-    if (!confirmResult.isConfirmed) return;
-
-    showLoading('กำลังล้างประวัติการปรับปรุงสต็อกทั้งหมด...');
-    try {
-        let res = await fetch(API_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'deleteAllRestockHistory',
-                payload: {}
-            })
-        });
-        let result = await res.json();
-        if (result.status === 'success') {
-            showToast('ล้างประวัติการปรับปรุงสต็อกทั้งหมดเรียบร้อยแล้ว', 'success');
-            await initRestockHistoryView();
-        } else {
-            showToast('เกิดข้อผิดพลาด: ' + (result.message || 'ไม่สามารถล้างประวัติได้'), 'error');
-        }
-    } catch (err) {
-        console.error(err);
-        showToast('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์', 'error');
-    } finally {
-        hideLoading();
-    }
 }
 
 function exportRestockHistoryToExcel() {
@@ -5579,10 +5420,10 @@ function exportReportToExcel() {
             
             tbody.innerHTML = '';
 
-            // กรองข้อมูลเฉพาะการเบิกจ่ายอะไหล่ (ไม่รวมการเติมสต็อก/ปรับยอดสต็อก)
-            let transactionsToRender = transactions.filter(t => t.status !== 'Restock');
+            // กรองข้อมูลสำหรับบทบาททั่วไป ให้เห็นเฉพาะของตัวเอง
+            let transactionsToRender = transactions;
             if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
-                transactionsToRender = transactionsToRender.filter(t => t.requester === currentUser.fullName);
+                transactionsToRender = transactions.filter(t => t.requester === currentUser.fullName);
             }
             
             let filtered = transactionsToRender.filter(t => {
@@ -8948,10 +8789,8 @@ const BYPASS_ACTIONS = [
     'getTransactions',
     'checkoutOrder',
     'restockProduct',
-    'bulkRestockProducts',
     'cancelTransaction',
     'deleteTransaction',
-    'deleteAllRestockHistory',
     'addMapping',
     'deleteMapping',
     'saveSettings',
@@ -9015,17 +8854,12 @@ async function handleActionDirectlyOnFirebase(action, payload) {
                 return { status: 'success', data: await executeDirectCheckout(payload) };
             case 'restockProduct':
                 return { status: 'success', data: await executeDirectRestock(payload) };
-            case 'bulkRestockProducts':
-                return { status: 'success', data: await executeDirectBulkRestock(payload) };
             case 'cancelTransaction':
                 await executeDirectCancelTransaction(payload);
                 return { status: 'success', message: 'ยกเลิกใบเบิกสำเร็จ คืนสต็อกอะไหล่เข้าคลังเรียบร้อยแล้ว' };
             case 'deleteTransaction':
                 await executeDirectDeleteTransaction(payload);
                 return { status: 'success', message: 'ลบประวัติใบเบิกสำเร็จเรียบร้อยแล้ว' };
-            case 'deleteAllRestockHistory':
-                await executeDirectDeleteAllRestockHistory();
-                return { status: 'success', message: 'ล้างประวัติการปรับปรุงสต็อกทั้งหมดสำเร็จเรียบร้อยแล้ว' };
             case 'addMapping':
                 await executeDirectAddMapping(payload);
                 return { status: 'success', message: 'บันทึกการจับคู่สำเร็จ' };
@@ -9084,7 +8918,7 @@ async function executeDirectEditProduct(payload) {
         category: payload.category, note: payload.note, image_url: oldProduct.image_url || "",
         stock_qty: stockQty, group: payload.group || "", supplier: payload.supplier || "", storage: payload.storage || ""
     };
-    await firebase.database().ref('appData/products/' + index).set(products[index]);
+    await firebase.database().ref('appData/products').set(products);
     db.products = products;
     invalidateLocalCache();
 }
@@ -9100,7 +8934,7 @@ async function executeDirectEditMachine(payload) {
         price_a: parseFloat(payload.price_a) || 0, price_b: parseFloat(payload.price_b) || 0, price_c: parseFloat(payload.price_c) || 0,
         note: payload.note || "", group: payload.group || "", supplier: payload.supplier || "", storage: payload.storage || ""
     };
-    await firebase.database().ref('appData/machines/' + index).set(machines[index]);
+    await firebase.database().ref('appData/machines').set(machines);
     db.machines = machines;
     invalidateLocalCache();
 }
@@ -9116,7 +8950,7 @@ async function executeDirectEditManual(payload) {
         file_url: oldManual.file_url || "", file_type: payload.file_type || oldManual.file_type,
         uploaded_at: oldManual.uploaded_at || ""
     };
-    await firebase.database().ref('appData/manuals/' + index).set(manuals[index]);
+    await firebase.database().ref('appData/manuals').set(manuals);
     db.manuals = manuals;
     invalidateLocalCache();
     return { file_url: oldManual.file_url || "" };
@@ -9194,7 +9028,7 @@ async function executeDirectGetUsersList(payload) {
 }
 
 async function executeDirectUpdateUserByAdmin(payload) {
-    const email = String(payload.email || "").trim().toLowerCase();
+    const email = String(payload.targetEmail || payload.email || "").trim().toLowerCase();
     const snapshot = await firebase.database().ref('users').get();
     const users = ensureArray(snapshot.val());
     
@@ -9204,9 +9038,9 @@ async function executeDirectUpdateUserByAdmin(payload) {
     users[index].fullName = String(payload.fullName || users[index].fullName).trim();
     users[index].department = String(payload.department || users[index].department).trim();
     users[index].phone = String(payload.phone || users[index].phone).trim();
-    users[index].role = String(payload.role || users[index].role).trim();
-    users[index].priceLevel = String(payload.priceLevel || users[index].priceLevel || "A").trim();
-    users[index].userType = String(payload.userType || users[index].userType || "insource").trim();
+    users[index].role = String(payload.newRole || payload.role || users[index].role).trim();
+    users[index].priceLevel = String(payload.newPriceLevel || payload.priceLevel || users[index].priceLevel || "A").trim();
+    users[index].userType = String(payload.newUserType || payload.userType || users[index].userType || "insource").trim();
     
     if (payload.password) {
         users[index].passwordHash = await sha256(payload.password);
@@ -9216,7 +9050,7 @@ async function executeDirectUpdateUserByAdmin(payload) {
 }
 
 async function executeDirectDeleteUserByAdmin(payload) {
-    const email = String(payload.email || "").trim().toLowerCase();
+    const email = String(payload.targetEmail || payload.email || "").trim().toLowerCase();
     const snapshot = await firebase.database().ref('users').get();
     let users = ensureArray(snapshot.val());
     
@@ -9377,12 +9211,7 @@ async function executeDirectCheckout(payload) {
     transactions.push(newTransaction);
     
     const updates = {};
-    cart.forEach(item => {
-        const pIdx = products.findIndex(p => String(p.id).trim() === String(item.id).trim());
-        if (pIdx !== -1) {
-            updates["appData/products/" + pIdx] = products[pIdx];
-        }
-    });
+    updates["appData/products"] = products;
     updates["lots"] = lots;
     updates["transactions"] = transactions;
     await firebase.database().ref().update(updates);
@@ -9460,14 +9289,10 @@ async function executeDirectRestock(payload) {
     };
     transactions.push(newRestockTransaction);
     
-    const productIndex = products.findIndex(p => String(p.id).trim() === String(payload.id).trim());
-    
     const updates = {};
-    if (productIndex !== -1) {
-        updates["appData/products/" + productIndex] = product;
-    }
-    updates["lots/" + (lots.length - 1)] = lots[lots.length - 1];
-    updates["transactions/" + (transactions.length - 1)] = newRestockTransaction;
+    updates["appData/products"] = products;
+    updates["lots"] = lots;
+    updates["transactions"] = transactions;
     await firebase.database().ref().update(updates);
     transactionsCache = null; // Invalidate cache
     
@@ -9477,109 +9302,6 @@ async function executeDirectRestock(payload) {
     invalidateLocalCache();
     
     return { new_stock: product.stock_qty, transaction_id: nextTxId, lot_id: lotId };
-}
-
-async function executeDirectBulkRestock(payload) {
-    const items = payload.items || [];
-    if (!Array.isArray(items) || items.length === 0) {
-        throw new Error("ไม่มีรายการที่ต้องปรับปรุงสต็อก");
-    }
-
-    const snapshot = await firebase.database().ref().get();
-    const fbData = snapshot.val() || {};
-    
-    let products = ensureArray(fbData.appData?.products);
-    let lots = ensureArray(fbData.lots);
-    let transactions = ensureArray(fbData.transactions);
-    
-    let lastTxId = 0;
-    if (transactions.length > 0) {
-        const lastTx = transactions[transactions.length - 1];
-        lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
-    }
-    
-    const initialLotCount = lots.length;
-    const initialTxCount = transactions.length;
-    let updatedCount = 0;
-    const nowStamp = Date.now();
-    const dateTimeStr = getFormattedDateTimeString();
-    
-    const updates = {};
-
-    items.forEach((itemPayload, idx) => {
-        const prodIndex = products.findIndex(p => String(p.id).trim() === String(itemPayload.id).trim());
-        if (prodIndex === -1) return;
-        const product = products[prodIndex];
-        
-        const qty = parseFloat(itemPayload.qty) || 0;
-        const cost = (itemPayload.cost !== undefined && itemPayload.cost !== "") ? parseFloat(itemPayload.cost) : (parseFloat(product.cost) || 0);
-        const pA = (itemPayload.price_a !== undefined && itemPayload.price_a !== "") ? parseFloat(itemPayload.price_a) : (parseFloat(product.price_a) || 0);
-        const pB = (itemPayload.price_b !== undefined && itemPayload.price_b !== "") ? parseFloat(itemPayload.price_b) : (parseFloat(product.price_b) || 0);
-        const pC = (itemPayload.price_c !== undefined && itemPayload.price_c !== "") ? parseFloat(itemPayload.price_c) : (parseFloat(product.price_c) || 0);
-        
-        const lotId = "LOT-" + itemPayload.id + "-" + (nowStamp + idx);
-        lots.push({
-            lot_id: lotId,
-            product_id: itemPayload.id,
-            cost: cost,
-            price_a: pA,
-            price_b: pB,
-            price_c: pC,
-            initial_qty: qty,
-            remaining_qty: qty,
-            created_at: dateTimeStr,
-            note: itemPayload.note || "ปรับยอดสต็อกหลายรายการ"
-        });
-        
-        product.stock_qty = (parseFloat(product.stock_qty) || 0) + qty;
-        product.cost = cost;
-        product.price_a = pA;
-        product.price_b = pB;
-        product.price_c = pC;
-        
-        updates["appData/products/" + prodIndex] = product;
-        
-        lastTxId++;
-        const nextTxId = "TX-" + String(lastTxId).padStart(6, '0');
-        
-        const newRestockTransaction = {
-            id: nextTxId,
-            requester: itemPayload.requester,
-            department: itemPayload.department || "สโตร์ (Restock Batch)",
-            machine_id: "RESTOCK",
-            serial_number: "",
-            total_price: 0,
-            note: itemPayload.note || "ปรับยอดสต็อกหลายรายการ",
-            created_at: dateTimeStr,
-            status: "Restock",
-            items: [{
-                lot_id: lotId,
-                product_id: itemPayload.id,
-                qty: qty,
-                cost: cost,
-                price: 0
-            }]
-        };
-        transactions.push(newRestockTransaction);
-        updatedCount++;
-    });
-    
-    for (let i = initialLotCount; i < lots.length; i++) {
-        updates["lots/" + i] = lots[i];
-    }
-    for (let i = initialTxCount; i < transactions.length; i++) {
-        updates["transactions/" + i] = transactions[i];
-    }
-    
-    await firebase.database().ref().update(updates);
-    transactionsCache = null; // Invalidate cache
-    
-    db.products = products;
-    db.lots = lots;
-    db.transactions = transactions;
-    invalidateLocalCache();
-    
-    return { count: updatedCount };
 }
 
 async function executeDirectCancelTransaction(payload) {
@@ -9631,18 +9353,6 @@ async function executeDirectDeleteTransaction(payload) {
     
     const txId = String(payload.transaction_id).trim();
     transactions = transactions.filter(t => t.id !== txId);
-    
-    await firebase.database().ref('transactions').set(transactions);
-    transactionsCache = null; // Invalidate cache
-    db.transactions = transactions;
-    invalidateLocalCache();
-}
-
-async function executeDirectDeleteAllRestockHistory() {
-    const snapshot = await firebase.database().ref('transactions').get();
-    let transactions = ensureArray(snapshot.val());
-    
-    transactions = transactions.filter(t => t.status !== 'Restock');
     
     await firebase.database().ref('transactions').set(transactions);
     transactionsCache = null; // Invalidate cache
@@ -9942,14 +9652,10 @@ function ensureArray(val) {
 
 function invalidateLocalCache() {
     try {
-        if (db && db.products && Array.isArray(db.products)) {
-            localStorage.setItem('spareparts_cache_v1', JSON.stringify({ data: db, ts: Date.now() }));
-            console.log("[Firebase Bypass] LocalStorage cache updated in-place.");
-        } else {
-            localStorage.removeItem('spareparts_cache_v1');
-        }
+        localStorage.removeItem('spareparts_cache_v1');
+        console.log("[Firebase Bypass] LocalStorage cache invalidated.");
     } catch (e) {
-        console.error("Failed to update localStorage cache: ", e);
+        console.error("Failed to clear localStorage cache: ", e);
     }
 }
 
