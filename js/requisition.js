@@ -1080,20 +1080,7 @@
             const headerRow = document.getElementById('tdmTableHeaderRow');
 
             const formatDateTimeThai = (dateStr) => {
-                if (!dateStr) return '-';
-                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
-                const parts = normalized.split(' ');
-                const datePart = parts[0];
-                const timePart = parts[1] || '';
-
-                const dateSplit = datePart.split('-');
-                if (dateSplit.length !== 3) return dateStr;
-
-                const y = dateSplit[0];
-                const m = dateSplit[1];
-                const d = dateSplit[2];
-
-                return `${d}/${m}/${y} ${timePart}`.trim();
+                return window.formatDateTimeThai ? window.formatDateTimeThai(dateStr) : dateStr;
             };
 
             document.getElementById('tdm_date').innerText = formatDateTimeThai(t.date || t.created_at || '');
@@ -1353,20 +1340,7 @@
             const companyTaxId = 'เลขประจำตัวผู้เสียภาษี 0107551000231';
 
             const formatDateTimeThai = (dateStr) => {
-                if (!dateStr) return '-';
-                const normalized = dateStr.replace('T', ' ').replace(/\.\d+Z$/, '');
-                const parts = normalized.split(' ');
-                const datePart = parts[0];
-                const timePart = parts[1] || '';
-
-                const dateSplit = datePart.split('-');
-                if (dateSplit.length !== 3) return dateStr;
-
-                const y = dateSplit[0];
-                const m = dateSplit[1];
-                const d = dateSplit[2];
-
-                return `${d}/${m}/${y} ${timePart}`.trim();
+                return window.formatDateTimeThai ? window.formatDateTimeThai(dateStr) : dateStr;
             };
 
             const formattedDate = formatDateTimeThai(t.date || t.created_at || '');

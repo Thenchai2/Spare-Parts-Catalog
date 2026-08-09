@@ -7,6 +7,32 @@ window.formatDateTimeThai = function(dateStr) {
     let str = String(dateStr).trim();
     if (!str || str === '-') return '-';
 
+    try {
+        let parseStr = str;
+        if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/.test(str)) {
+            parseStr = str.replace(' ', 'T');
+        }
+        const d = new Date(parseStr);
+        if (!isNaN(d.getTime())) {
+            const pad = (n) => String(n).padStart(2, '0');
+            const day = pad(d.getDate());
+            const month = pad(d.getMonth() + 1);
+            const year = d.getFullYear();
+            
+            const hasTime = str.includes(':') || (str.includes('T') && str.split('T')[1]);
+            if (hasTime) {
+                const hours = pad(d.getHours());
+                const minutes = pad(d.getMinutes());
+                const seconds = pad(d.getSeconds());
+                return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+            } else {
+                return `${day}/${month}/${year}`;
+            }
+        }
+    } catch (e) {
+        // ignore and fallback
+    }
+
     str = str.replace('T', ' ').replace(/\.\d+Z$/, '').replace(/Z$/, '');
     const parts = str.split(' ');
     const datePart = parts[0];
