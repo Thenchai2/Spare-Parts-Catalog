@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="https://lh3.googleusercontent.com/d/1kH8HErbms_U0xnoiJ7jlW7r79FK3hXeB">
+    <title>แคตตาล็อกอะไหล่เครื่องจักร (Spare Parts Catalog)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-gray-800">
+
+    <!-- Notifications handled by SweetAlert2 -->
+
+    <!-- Product Detail Modal (ดูข้อมูลอะไหล่ + เครื่องจักรที่เกี่ยวข้อง) -->
+    <div id="productDetailModal" class="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center hidden backdrop-blur-sm p-4 overflow-y-auto" onclick="closeProductDetailModal()">
+        <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl transform transition-all my-auto flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+
+            <!-- ปุ่มปิด (ลอยอยู่มุมขวาบน) -->
+            <div class="relative flex-shrink-0">
+                <button onclick="closeProductDetailModal()" class="absolute top-4 right-4 z-20 bg-black/50 hover:bg-black/75 text-white w-9 h-9 rounded-full flex items-center justify-center transition backdrop-blur-sm shadow-md">
+                    <i class="fa-solid fa-times text-base"></i>
+                </button>
+
+                <!-- รูปภาพใหญ่ -->
+                <div class="bg-slate-100 cursor-zoom-in" onclick="event.stopPropagation(); openImageLightbox(document.getElementById('pd_image').src, document.getElementById('pd_name').innerText)">
+                    <img id="pd_image" src="" alt="" class="w-full h-72 sm:h-96 object-contain p-4" onerror="this.src='https://placehold.co/800x500/f8fafc/94a3b8?text=No+Image'">
+                </div>
+            </div>
+
+            <!-- ข้อมูลใต้รูป -->
+            <div class="overflow-y-auto hide-scroll flex-1 p-6 sm:p-8">
+                <!-- รหัส + ชื่อ (ส่วนหลัก) -->
+                <div class="mb-6">
+                    <div class="flex flex-wrap items-center gap-2 mb-3">
+                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">รหัสสินค้า:</span>
+                        <span id="pd_id" class="bg-slate-900 text-white text-sm font-bold px-3.5 py-1.5 rounded-lg tracking-widest font-mono shadow-sm"></span>
+                        <span id="pd_category" class="bg-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full"></span>
+                        <span id="pd_unit" class="bg-slate-100 text-slate-600 text-xs font-medium px-3 py-1 rounded-full"></span>
+                        <span id="pd_stock" class="text-xs font-bold px-3 py-1 rounded-full"></span>
+                    </div>
+                    <h2 id="pd_name" class="text-2xl sm:text-3xl font-extrabold text-gray-900 leading-snug"></h2>
+                </div>
+
+                <!-- ราคา -->
+                <div class="bg-slate-50 border border-slate-100 rounded-2xl p-5 mb-6">
+                    <h3 class="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-tag text-blue-500"></i> ข้อมูลราคา
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div id="pd_cost_box" class="sm:col-span-3 bg-red-50 border border-red-100 px-4 py-3 rounded-xl flex justify-between items-center hidden">
+                            <p class="text-xs text-red-500 font-bold">ราคาต้นทุน</p>
+                            <p id="pd_cost" class="text-lg font-bold text-red-600"></p>
+                        </div>
+                        <div id="pd_price_a_box" class="bg-white border border-slate-200 px-4 py-3.5 rounded-xl shadow-sm">
+                            <p id="pd_price_a_label" class="text-xs text-blue-500 font-bold mb-1">ราคากลาง</p>
+                            <p id="pd_price_a" class="text-xl font-extrabold text-blue-600"></p>
+                        </div>
+                        <div id="pd_price_b_box" class="bg-white border border-slate-200 px-4 py-3.5 rounded-xl shadow-sm">
+                            <p class="text-xs text-green-500 font-bold mb-1">ราคาตัวแทน</p>
+                            <p id="pd_price_b" class="text-xl font-extrabold text-green-600"></p>
+                        </div>
+                        <div id="pd_price_c_box" class="bg-white border border-slate-200 px-4 py-3.5 rounded-xl shadow-sm">
+                            <p class="text-xs text-orange-500 font-bold mb-1">ราคาในเครือ</p>
+                            <p id="pd_price_c" class="text-xl font-extrabold text-orange-600"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional Info -->
+                <div class="border-t border-gray-100 pt-5 mb-5">
+                    <h3 class="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-info text-blue-500"></i> ข้อมูลเพิ่มเติม
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl">
+                            <p class="text-xs text-gray-400 font-semibold mb-1">กลุ่มสินค้า</p>
+                            <p id="pd_group" class="text-sm font-bold text-gray-800">-</p>
+                        </div>
+                        <div id="pd_supplier_container" class="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl">
+                            <p class="text-xs text-gray-400 font-semibold mb-1">ซัพพลายเออร์</p>
+                            <p id="pd_supplier" class="text-sm font-bold text-gray-800">-</p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl">
+                            <p class="text-xs text-gray-400 font-semibold mb-1">พื้นที่จัดเก็บ</p>
+                            <p id="pd_storage" class="text-sm font-bold text-gray-800">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Note -->
+                <div class="border-t border-gray-100 pt-5 mb-5">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">รายละเอียด / หมายเหตุ</p>
+                    <p id="pd_note" class="text-gray-700 text-sm whitespace-pre-line leading-relaxed bg-gray-50 border border-gray-100 rounded-xl p-4"></p>
+                </div>
+
+                <!-- เครื่องจักรที่รองรับ -->
+                <div class="border-t border-gray-100 pt-5">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-industry"></i> ใช้กับเครื่องจักร
+                    </p>
+                    <div id="pd_machines_grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- Card เครื่องจักรจะถูกแทรกที่นี่ -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Machine Detail Modal -->
+    <div id="imageLightbox" class="fixed inset-0 bg-black/85 z-[200] flex items-center justify-center hidden backdrop-blur-sm p-4" onclick="closeImageLightbox()">
+        <div class="relative max-w-5xl w-full max-h-[92vh] flex flex-col items-center" onclick="event.stopPropagation()">
+            <!-- Close button -->
+            <button onclick="closeImageLightbox()" class="absolute -top-3 -right-3 z-10 bg-white text-gray-700 hover:text-red-600 hover:bg-red-50 w-9 h-9 rounded-full flex items-center justify-center shadow-xl border border-gray-200 transition text-lg font-bold">
+                <i class="fa-solid fa-times"></i>
+            </button>
+            <!-- Image -->
+            <div class="bg-white/10 rounded-2xl overflow-hidden shadow-2xl border border-white/20 max-h-[85vh] flex items-center justify-center p-2">
+                <img id="lightboxImg" src="" alt="" class="max-w-full max-h-[80vh] object-contain rounded-xl" style="min-width:200px;min-height:150px;">
+            </div>
+            <!-- Caption -->
+            <div id="lightboxCaption" class="mt-3 text-white/90 text-sm font-medium bg-black/40 px-4 py-1.5 rounded-full backdrop-blur-sm"></div>
+        </div>
+    </div>
+
+    <!-- Add Machine Modal -->
+                <div id="transactionDetailModal" class="fixed inset-0 bg-gray-900/60 z-[100] flex items-center justify-center hidden backdrop-blur-sm p-4 overflow-y-auto" onclick="closeTransactionDetailModal()">
+                    <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl transform transition-all my-auto max-h-[90vh] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+                        <div class="flex justify-between items-center p-6 border-b border-gray-100 flex-shrink-0">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800" id="tdm_title_main"><i class="fa-solid fa-receipt text-blue-500 mr-2"></i>รายละเอียดใบเบิกจ่าย</h3>
+                                <p class="text-xs text-gray-500 mt-0.5" id="tdm_id_subtitle">เลขที่ใบเบิก: LDT-XXXXXX</p>
+                            </div>
+                            <button onclick="closeTransactionDetailModal()" class="text-gray-400 hover:text-red-500 transition p-2 rounded-lg hover:bg-red-50">
+                                <i class="fa-solid fa-times text-lg"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="p-6 overflow-y-auto hide-scroll flex-1 space-y-4">
+                            <!-- รายละเอียดหลัก -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-sm">
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">วันเวลาที่บันทึก:</p>
+                                    <p id="tdm_date" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_status_label">สถานะใบเบิก:</p>
+                                    <p id="tdm_status" class="font-bold"></p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_requester_label">พนักงานผู้ขอเบิก:</p>
+                                    <p id="tdm_requester" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_department_label">สังกัดฝ่าย/แผนก:</p>
+                                    <p id="tdm_department" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div id="tdm_machine_container">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_machine_label">ใช้งานสำหรับเครื่องจักร:</p>
+                                    <p id="tdm_machine" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div id="tdm_serial_container">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_serial_label">Serial Number:</p>
+                                    <p id="tdm_serial_number" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div class="col-span-1 sm:col-span-2">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">หมายเหตุเพิ่มเติม:</p>
+                                    <p id="tdm_note" class="text-gray-600 bg-white p-3 rounded-xl border border-gray-200 mt-1 min-h-[40px] whitespace-pre-line text-xs leading-relaxed"></p>
+                                </div>
+                            </div>
+                            
+                            <!-- ตารางรายการสินค้า -->
+                            <div class="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                                <div class="overflow-x-auto w-full table-scroll">
+                                    <table class="min-w-full text-left text-xs whitespace-nowrap">
+                                        <thead class="bg-slate-800 text-white">
+                                            <tr id="tdmTableHeaderRow">
+                                                <th class="p-3 font-medium">รหัสอะไหล่</th>
+                                                <th class="p-3 font-medium">ชื่อรายการสินค้า</th>
+                                                <th class="p-3 font-medium text-right">จำนวนเบิก</th>
+                                                <th class="p-3 font-medium text-right">ราคาต่อหน่วย</th>
+                                                <th class="p-3 font-medium text-right">ยอดรวม</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tdmItemsTableBody" class="divide-y divide-gray-100 bg-white">
+                                            <!-- เรนเดอร์ด้วย JS -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- มูลค่ารวมสุทธิ -->
+                            <div id="tdm_total_price_container" class="flex justify-between items-center bg-blue-50 border border-blue-100 p-4 rounded-xl">
+                                <span class="text-sm font-bold text-blue-800">มูลค่ารวมใบเบิกสุทธิ:</span>
+                                <span id="tdm_total_price" class="text-xl font-extrabold text-blue-700">฿0.00</span>
+                            </div>
+                        </div>
+                        
+                        <div class="p-5 bg-slate-50 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+                            <!-- ปุ่มยกเลิกใบเบิกสินค้า (คืนสต็อก) และลบรายการ (Admin เท่านั้น) -->
+                            <div class="flex gap-2">
+                                <button id="tdmCancelBtn" onclick="" class="px-4 py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 hover:border-red-600 transition rounded-xl font-semibold text-sm flex items-center gap-1">
+                                    <i class="fa-solid fa-ban"></i>
+                                    ยกเลิกและคืนสต็อก
+                                </button>
+                                <button id="tdmDeleteBtn" onclick="" class="px-4 py-2.5 bg-red-100 hover:bg-red-700 text-red-700 hover:text-white border border-red-200 hover:border-red-700 transition rounded-xl font-semibold text-sm flex items-center gap-1 hidden">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                    ลบรายการประวัติ
+                                </button>
+                            </div>
+                            
+                            <div class="flex gap-2">
+                                <button onclick="closeTransactionDetailModal()" class="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-100 transition font-medium text-sm">ปิด</button>
+                                <button id="tdmPrintBtn" onclick="" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-600/20 transition font-semibold text-sm flex items-center gap-1.5">
+                                    <i class="fa-solid fa-print"></i>
+                                    พิมพ์ใบเบิกอะไหล่
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ================== QR Code Modal ================== -->
+    <div class="flex h-screen overflow-hidden w-full relative">
+        
+        <!-- Sidebar Backdrop -->
+        <div id="sidebarBackdrop" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden transition-opacity" onclick="toggleSidebar()"></div>
+
+        <!-- Sidebar (ซ้าย) -->
+        <!-- Sidebar (ซ้าย) -->
+        <aside id="sidebar" class="bg-slate-800 text-white w-72 md:w-64 flex-shrink-0 flex flex-col absolute md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform z-50 h-full shadow-2xl md:shadow-none"></aside>
+
+        <!-- Main Content (ขวา) -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden w-full bg-slate-50 relative">
+            
+            <!-- Mobile Header -->
+            <header class="bg-white shadow-sm flex items-center justify-between p-4 md:hidden z-30 sticky top-0">
+                <div class="flex items-center gap-3">
+                    <button class="text-slate-600 hover:text-blue-600 focus:outline-none p-1.5 rounded-md hover:bg-slate-100 transition" onclick="toggleSidebar()">
+                        <i class="fa-solid fa-bars text-xl"></i>
+                    </button>
+                    <h1 class="text-lg font-bold text-slate-800 truncate whitespace-nowrap"><i class="fa-solid fa-gears text-blue-600 mr-2 hidden sm:inline-block"></i> Spare Parts</h1>
+                </div>
+                <!-- ปุ่ม Refresh บนมือถือ -->
+                <button onclick="fetchData(true)" class="text-slate-600 hover:text-blue-600 p-2 rounded-xl hover:bg-slate-100 transition duration-200 flex items-center gap-1.5 text-sm font-semibold border border-gray-200 shadow-sm" title="รีเฟรชข้อมูล">
+                    <i class="fa-solid fa-rotate text-blue-500"></i>
+                    <span>รีเฟรช</span>
+                </button>
+            </header>
+
+            <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 w-full relative">
+                
+                <section id="view-purchase" class="view-section hidden w-full relative z-10 p-6 overflow-y-auto">
+                    <!-- Main Grid View -->
+                    <div id="purchase-menu-grid">
+                        <!-- Header -->
+                        <div class="mb-8">
+                            <h2 class="text-2xl sm:text-3xl font-extrabold text-slate-800 flex items-center gap-3">
+                                <i class="fa-solid fa-cart-flatbed-suitcase text-indigo-500 animate-pulse"></i>
+                                งานจัดซื้อ (Purchasing)
+                            </h2>
+                            <p class="text-slate-500 text-sm mt-1.5">จัดการการจัดซื้อ รับสินค้า และตรวจสอบภาพรวมการสั่งซื้ออะไหล่</p>
+                        </div>
+
+                        <!-- Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <!-- Card 1: รับสินค้า -->
+                            <div id="card-purchase-receive" onclick="openPurchaseSubSection('receive', 'รับสินค้า', 'fa-dolly', 'from-emerald-500 to-teal-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                        <i class="fa-solid fa-dolly text-2xl"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-emerald-600 transition-colors flex items-center gap-2">
+                                        รับสินค้า
+                                        <span id="count-purchase-receive" class="hidden text-xs bg-rose-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">0</span>
+                                    </h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">บันทึกรับรายการอะไหล่เข้าคลังและอัปเดตสต็อกสินค้า</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 2: เพิ่มคำสั่งซื้อ -->
+                            <div onclick="openPurchaseSubSection('add-order', 'เพิ่มคำสั่งซื้อ', 'fa-cart-plus', 'from-blue-500 to-indigo-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                        <i class="fa-solid fa-cart-plus text-2xl"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors">เพิ่มคำสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">สร้างเอกสารสั่งซื้ออะไหล่ใหม่ส่งซัพพลายเออร์</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 3: จัดการคำสั่งซื้อ -->
+                            <div id="card-manage-orders" onclick="openPurchaseSubSection('manage-orders', 'จัดการคำสั่งซื้อ', 'fa-tasks', 'from-amber-500 to-orange-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-amber-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
+                                        <i class="fa-solid fa-tasks text-2xl"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-amber-600 transition-colors flex items-center gap-2">
+                                        จัดการคำสั่งซื้อ
+                                        <span id="count-manage-orders" class="hidden text-xs bg-amber-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">0</span>
+                                    </h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">ตรวจสอบความคืบหน้า อนุมัติ หรือยกเลิกใบสั่งซื้อ</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 4: ประวัติการสั่งซื้อ -->
+                            <div id="card-purchase-history" onclick="openPurchaseSubSection('history', 'ประวัติการสั่งซื้อ', 'fa-clock-rotate-left', 'from-purple-500 to-pink-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-purple-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+                                        <i class="fa-solid fa-clock-rotate-left text-2xl"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-purple-600 transition-colors">ประวัติการสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">เรียกดูบันทึกและประวัติใบสั่งซื้อย้อนหลังทั้งหมดในระบบ</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 5: ภาพรวมการสั่งซื้อ -->
+                            <div id="card-purchase-overview" onclick="openPurchaseSubSection('overview', 'ภาพรวมการสั่งซื้อ', 'fa-chart-line', 'from-cyan-500 to-blue-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-cyan-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                                        <i class="fa-solid fa-chart-line text-2xl"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-cyan-600 transition-colors">ภาพรวมการสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">รายงานสถิติ แดชบอร์ดข้อมูลและวิเคราะห์แนวโน้มจัดซื้อ</p>
+                                </div>
+                            </div>
+
+                            <!-- Card 6: แดชบอร์ดการสั่งซื้อ -->
+                            <div onclick="openPurchaseSubSection('dashboard-orders', 'แดชบอร์ดการสั่งซื้อ', 'fa-table-list', 'from-indigo-500 to-purple-600')" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between min-h-[180px]">
+                                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-indigo-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                                <div class="flex justify-between items-start z-10">
+                                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                                        <i class="fa-solid fa-table-list text-2xl"></i>
+                                    </div>
+                                </div>
+                                <div class="mt-6 z-10">
+                                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">แดชบอร์ดการสั่งซื้อ</h3>
+                                    <p class="text-xs text-slate-500 mt-1 leading-relaxed">ค้นหาและวิเคราะห์รายการสั่งซื้อพร้อมระดับสถานะอย่างละเอียด</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub Sections Container (Initially Hidden) -->
+                    <div id="purchase-sub-content" class="hidden">
+                        <!-- Navigation / Back Button -->
+                        <button onclick="closePurchaseSubSection()" class="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-xl text-xs font-semibold shadow-sm transition mb-6">
+                            <i class="fa-solid fa-arrow-left"></i> กลับไปหน้าจัดซื้อ
+                        </button>
+
+                        <!-- Dynamically filled wrapper -->
+                        <div class="bg-white rounded-3xl border border-slate-150 p-8 shadow-sm">
+                            <div class="flex items-center gap-4 mb-6">
+                                <div id="sub-sec-icon-bg" class="w-12 h-12 rounded-xl text-white flex items-center justify-center">
+                                    <i id="sub-sec-icon" class="fa-solid text-xl"></i>
+                                </div>
+                                <div>
+                                    <h3 id="sub-sec-title" class="text-xl font-bold text-slate-800"></h3>
+                                    <p id="sub-sec-subtitle" class="text-xs text-slate-500 mt-0.5"></p>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-100 pt-6">
+                                <!-- Content Body -->
+                                <div id="sub-sec-body" class="flex flex-col items-center justify-center py-12 text-center text-slate-400">
+                                    <div class="w-20 h-20 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 text-3xl mb-4 border border-dashed border-slate-200">
+                                        <i class="fa-solid fa-helmet-safety"></i>
+                                    </div>
+                                    <h4 class="text-slate-700 font-bold text-sm">ระบบส่วนงานนี้อยู่ระหว่างการเตรียมความพร้อม</h4>
+                                    <p class="text-slate-400 text-xs mt-1 max-w-sm leading-relaxed">โมดูลนี้ได้รับการเชื่อมโยงแล้ว ทีมพัฒนากำลังดำเนินการติดตั้งฐานข้อมูลและหน้าอินเตอร์เฟสสำหรับการใช้งานจริง</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================== หน้า Report ================== -->
+        </main>
+    </div>
+
+    <!-- Datalists for Autocomplete -->
+    <datalist id="list_product_categories"></datalist>
+    <datalist id="list_product_groups"></datalist>
+    <datalist id="list_product_suppliers"></datalist>
+    <datalist id="list_product_storages"></datalist>
+    <datalist id="list_machine_groups"></datalist>
+    <datalist id="list_machine_suppliers"></datalist>
+    <datalist id="list_machine_storages"></datalist>
+
+    <!-- Firebase SDK (Compat Version for Vanilla JS) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics-compat.js"></script>
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBlg7rvhtJnQS1_NplnEXjnvXPGv-cSyNI",
+        authDomain: "ltd-laundry.firebaseapp.com",
+        databaseURL: "https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "ltd-laundry",
+        storageBucket: "ltd-laundry.firebasestorage.app",
+        messagingSenderId: "869860390939",
+        appId: "1:869860390939:web:b77bdbe17342efccdee0be",
+        measurementId: "G-JHCWYTNE1G"
+      };
+      // Initialize Firebase & Analytics
+      firebase.initializeApp(firebaseConfig);
+      firebase.analytics();
+    </script>
+
+    <script src="js/common.js"></script>
+    <script src="js/purchase.js"></script>
+</body>
+</html>

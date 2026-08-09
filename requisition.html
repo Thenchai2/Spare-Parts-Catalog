@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="icon" type="image/png" href="https://lh3.googleusercontent.com/d/1kH8HErbms_U0xnoiJ7jlW7r79FK3hXeB">
+    <title>แคตตาล็อกอะไหล่เครื่องจักร (Spare Parts Catalog)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-gray-800">
+
+    <!-- Notifications handled by SweetAlert2 -->
+
+    <!-- Product Detail Modal (ดูข้อมูลอะไหล่ + เครื่องจักรที่เกี่ยวข้อง) -->
+    <div id="productDetailModal" class="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center hidden backdrop-blur-sm p-4 overflow-y-auto" onclick="closeProductDetailModal()">
+        <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl transform transition-all my-auto flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+
+            <!-- ปุ่มปิด (ลอยอยู่มุมขวาบน) -->
+            <div class="relative flex-shrink-0">
+                <button onclick="closeProductDetailModal()" class="absolute top-4 right-4 z-20 bg-black/50 hover:bg-black/75 text-white w-9 h-9 rounded-full flex items-center justify-center transition backdrop-blur-sm shadow-md">
+                    <i class="fa-solid fa-times text-base"></i>
+                </button>
+
+                <!-- รูปภาพใหญ่ -->
+                <div class="bg-slate-100 cursor-zoom-in" onclick="event.stopPropagation(); openImageLightbox(document.getElementById('pd_image').src, document.getElementById('pd_name').innerText)">
+                    <img id="pd_image" src="" alt="" class="w-full h-72 sm:h-96 object-contain p-4" onerror="this.src='https://placehold.co/800x500/f8fafc/94a3b8?text=No+Image'">
+                </div>
+            </div>
+
+            <!-- ข้อมูลใต้รูป -->
+            <div class="overflow-y-auto hide-scroll flex-1 p-6 sm:p-8">
+                <!-- รหัส + ชื่อ (ส่วนหลัก) -->
+                <div class="mb-6">
+                    <div class="flex flex-wrap items-center gap-2 mb-3">
+                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">รหัสสินค้า:</span>
+                        <span id="pd_id" class="bg-slate-900 text-white text-sm font-bold px-3.5 py-1.5 rounded-lg tracking-widest font-mono shadow-sm"></span>
+                        <span id="pd_category" class="bg-blue-100 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full"></span>
+                        <span id="pd_unit" class="bg-slate-100 text-slate-600 text-xs font-medium px-3 py-1 rounded-full"></span>
+                        <span id="pd_stock" class="text-xs font-bold px-3 py-1 rounded-full"></span>
+                    </div>
+                    <h2 id="pd_name" class="text-2xl sm:text-3xl font-extrabold text-gray-900 leading-snug"></h2>
+                </div>
+
+                <!-- ราคา -->
+                <div class="bg-slate-50 border border-slate-100 rounded-2xl p-5 mb-6">
+                    <h3 class="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-tag text-blue-500"></i> ข้อมูลราคา
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div id="pd_cost_box" class="sm:col-span-3 bg-red-50 border border-red-100 px-4 py-3 rounded-xl flex justify-between items-center hidden">
+                            <p class="text-xs text-red-500 font-bold">ราคาต้นทุน</p>
+                            <p id="pd_cost" class="text-lg font-bold text-red-600"></p>
+                        </div>
+                        <div id="pd_price_a_box" class="bg-white border border-slate-200 px-4 py-3.5 rounded-xl shadow-sm">
+                            <p id="pd_price_a_label" class="text-xs text-blue-500 font-bold mb-1">ราคากลาง</p>
+                            <p id="pd_price_a" class="text-xl font-extrabold text-blue-600"></p>
+                        </div>
+                        <div id="pd_price_b_box" class="bg-white border border-slate-200 px-4 py-3.5 rounded-xl shadow-sm">
+                            <p class="text-xs text-green-500 font-bold mb-1">ราคาตัวแทน</p>
+                            <p id="pd_price_b" class="text-xl font-extrabold text-green-600"></p>
+                        </div>
+                        <div id="pd_price_c_box" class="bg-white border border-slate-200 px-4 py-3.5 rounded-xl shadow-sm">
+                            <p class="text-xs text-orange-500 font-bold mb-1">ราคาในเครือ</p>
+                            <p id="pd_price_c" class="text-xl font-extrabold text-orange-600"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional Info -->
+                <div class="border-t border-gray-100 pt-5 mb-5">
+                    <h3 class="text-sm font-bold text-gray-800 mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-info text-blue-500"></i> ข้อมูลเพิ่มเติม
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div class="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl">
+                            <p class="text-xs text-gray-400 font-semibold mb-1">กลุ่มสินค้า</p>
+                            <p id="pd_group" class="text-sm font-bold text-gray-800">-</p>
+                        </div>
+                        <div id="pd_supplier_container" class="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl">
+                            <p class="text-xs text-gray-400 font-semibold mb-1">ซัพพลายเออร์</p>
+                            <p id="pd_supplier" class="text-sm font-bold text-gray-800">-</p>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-100 px-4 py-3 rounded-xl">
+                            <p class="text-xs text-gray-400 font-semibold mb-1">พื้นที่จัดเก็บ</p>
+                            <p id="pd_storage" class="text-sm font-bold text-gray-800">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Note -->
+                <div class="border-t border-gray-100 pt-5 mb-5">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">รายละเอียด / หมายเหตุ</p>
+                    <p id="pd_note" class="text-gray-700 text-sm whitespace-pre-line leading-relaxed bg-gray-50 border border-gray-100 rounded-xl p-4"></p>
+                </div>
+
+                <!-- เครื่องจักรที่รองรับ -->
+                <div class="border-t border-gray-100 pt-5">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <i class="fa-solid fa-industry"></i> ใช้กับเครื่องจักร
+                    </p>
+                    <div id="pd_machines_grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- Card เครื่องจักรจะถูกแทรกที่นี่ -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Machine Detail Modal -->
+    <div id="imageLightbox" class="fixed inset-0 bg-black/85 z-[200] flex items-center justify-center hidden backdrop-blur-sm p-4" onclick="closeImageLightbox()">
+        <div class="relative max-w-5xl w-full max-h-[92vh] flex flex-col items-center" onclick="event.stopPropagation()">
+            <!-- Close button -->
+            <button onclick="closeImageLightbox()" class="absolute -top-3 -right-3 z-10 bg-white text-gray-700 hover:text-red-600 hover:bg-red-50 w-9 h-9 rounded-full flex items-center justify-center shadow-xl border border-gray-200 transition text-lg font-bold">
+                <i class="fa-solid fa-times"></i>
+            </button>
+            <!-- Image -->
+            <div class="bg-white/10 rounded-2xl overflow-hidden shadow-2xl border border-white/20 max-h-[85vh] flex items-center justify-center p-2">
+                <img id="lightboxImg" src="" alt="" class="max-w-full max-h-[80vh] object-contain rounded-xl" style="min-width:200px;min-height:150px;">
+            </div>
+            <!-- Caption -->
+            <div id="lightboxCaption" class="mt-3 text-white/90 text-sm font-medium bg-black/40 px-4 py-1.5 rounded-full backdrop-blur-sm"></div>
+        </div>
+    </div>
+
+    <!-- Add Machine Modal -->
+                    <div id="cameraScannerModal" class="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center hidden backdrop-blur-sm p-4" onclick="closeCameraScanner()">
+                        <div class="bg-slate-900 text-white rounded-3xl w-full max-w-md border border-slate-800 shadow-2xl flex flex-col overflow-hidden relative" onclick="event.stopPropagation()">
+                            <div class="flex justify-between items-center p-5 border-b border-slate-800">
+                                <div class="text-left">
+                                    <h3 class="text-base font-bold text-amber-400 flex items-center gap-2">
+                                        <i class="fa-solid fa-camera-rotate animate-spin" style="animation-duration: 4s;"></i>
+                                        สแกน QR / บาร์โค้ดด้วยกล้อง
+                                    </h3>
+                                    <p class="text-[10px] text-slate-400 mt-0.5">จัดกึ่งกลางรหัสให้อยู่ในกรอบเพื่อสแกนอัตโนมัติ</p>
+                                </div>
+                                <button onclick="closeCameraScanner()" class="text-slate-400 hover:text-red-400 transition p-2 rounded-lg hover:bg-slate-800">
+                                    <i class="fa-solid fa-times text-base"></i>
+                                </button>
+                            </div>
+                            
+                            <!-- Video Feed Area -->
+                            <div class="relative bg-black aspect-square max-w-full overflow-hidden flex items-center justify-center">
+                                <!-- Camera Viewfinder -->
+                                <div id="qr-reader" class="w-full h-full"></div>
+                                
+                                <!-- Scanning Overlay Frame -->
+                                <div class="absolute pointer-events-none inset-0 flex items-center justify-center z-10">
+                                    <div class="w-64 h-64 border-2 border-dashed border-amber-400/50 rounded-2xl relative flex items-center justify-center">
+                                        <!-- Corner Brackets -->
+                                        <div class="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-amber-400 rounded-tl-lg"></div>
+                                        <div class="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-amber-400 rounded-tr-lg"></div>
+                                        <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-amber-400 rounded-bl-lg"></div>
+                                        <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-amber-400 rounded-tr-lg"></div>
+                                        
+                                        <!-- Laser Scanning Animation Line -->
+                                        <div class="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent top-0 animate-[scan_2s_infinite]"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Controls & Camera Selection -->
+                            <div class="p-5 border-t border-slate-800 bg-slate-900 flex flex-col gap-3">
+                                <div class="flex items-center justify-between text-xs text-slate-400">
+                                    <span>เลือกกล้อง:</span>
+                                    <select id="cameraSelect" onchange="switchCamera(this.value)" class="bg-slate-800 border border-slate-700 text-white rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer max-w-[70%]">
+                                        <option value="">กำลังดึงข้อมูลกล้อง...</option>
+                                    </select>
+                                </div>
+                                <button onclick="closeCameraScanner()" class="w-full py-2.5 bg-slate-850 hover:bg-slate-800 text-white font-medium text-xs rounded-xl transition border border-slate-700">
+                                    ยกเลิก
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ================== หน้าประวัติการเบิกจ่าย ================== -->
+                <div id="posCheckoutModal" class="fixed inset-0 bg-gray-900/60 z-[100] flex items-center justify-center hidden backdrop-blur-sm p-4 overflow-y-auto">
+                    <div class="bg-white rounded-3xl w-full max-w-lg shadow-2xl transform transition-all my-auto max-h-[90vh] flex flex-col overflow-hidden">
+                        <div class="flex justify-between items-center p-6 border-b border-gray-100 flex-shrink-0">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800"><i class="fa-solid fa-clipboard-list text-amber-500 mr-2"></i>ยืนยันรายละเอียดใบเบิก</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">ระบุรายละเอียดการใช้งานสำหรับการเบิกจ่าย</p>
+                            </div>
+                            <button onclick="closePOSCheckoutModal()" class="text-gray-400 hover:text-red-500 transition p-2 rounded-lg hover:bg-red-50">
+                                <i class="fa-solid fa-times text-lg"></i>
+                            </button>
+                        </div>
+                        <div class="p-6 overflow-y-auto hide-scroll flex-1">
+                            <form id="formPOSCheckout" onsubmit="submitPOSCheckout(event)">
+                                <div class="space-y-4 mb-6">
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-1.5">ชื่อพนักงานผู้เบิกอะไหล่ <span class="text-red-500">*</span></label>
+                                        <input type="text" id="pos_requester" required placeholder="เช่น นายประหยัด ดีงาม" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-1.5">แผนก/ฝ่ายงาน <span class="text-red-500">*</span></label>
+                                        <input type="text" id="pos_department" required placeholder="เช่น ซ่อมบำรุง (Maintenance)" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition text-sm">
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-sm font-semibold text-gray-700 mb-1.5">เครื่องจักร <span class="text-red-500">*</span></label>
+                                            <input type="text" id="pos_machine" required list="pos_machines_list" placeholder="ระบุหรือค้นหาเครื่องจักร" autocomplete="off" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition text-sm bg-white">
+                                            <datalist id="pos_machines_list"></datalist>
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-semibold text-gray-700 mb-1.5">Serial Number <span class="text-red-500">*</span></label>
+                                            <input type="text" id="pos_serial_number" required placeholder="ระบุ Serial Number" class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition text-sm">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-1.5">วัตถุประสงค์ในการเบิก / หมายเหตุ <span class="text-red-500">*</span></label>
+                                        <textarea id="pos_note" required rows="2" placeholder="เช่น เปลี่ยนเนื่องจากแกนพัง หรือรอบเดินเบาสะดุด..." class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition text-sm resize-none"></textarea>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                                    <button type="button" onclick="closePOSCheckoutModal()" class="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition font-medium">ยกเลิก</button>
+                                    <button type="submit" class="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-xl shadow-lg hover:shadow-amber-500/30 transition-all font-semibold">
+                                        <i class="fa-solid fa-save mr-2"></i>ยืนยันและหักสต็อก
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ================== Adjust Stock Modal ================== -->
+                <div id="transactionDetailModal" class="fixed inset-0 bg-gray-900/60 z-[100] flex items-center justify-center hidden backdrop-blur-sm p-4 overflow-y-auto" onclick="closeTransactionDetailModal()">
+                    <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl transform transition-all my-auto max-h-[90vh] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+                        <div class="flex justify-between items-center p-6 border-b border-gray-100 flex-shrink-0">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800" id="tdm_title_main"><i class="fa-solid fa-receipt text-blue-500 mr-2"></i>รายละเอียดใบเบิกจ่าย</h3>
+                                <p class="text-xs text-gray-500 mt-0.5" id="tdm_id_subtitle">เลขที่ใบเบิก: LDT-XXXXXX</p>
+                            </div>
+                            <button onclick="closeTransactionDetailModal()" class="text-gray-400 hover:text-red-500 transition p-2 rounded-lg hover:bg-red-50">
+                                <i class="fa-solid fa-times text-lg"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="p-6 overflow-y-auto hide-scroll flex-1 space-y-4">
+                            <!-- รายละเอียดหลัก -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-sm">
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">วันเวลาที่บันทึก:</p>
+                                    <p id="tdm_date" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_status_label">สถานะใบเบิก:</p>
+                                    <p id="tdm_status" class="font-bold"></p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_requester_label">พนักงานผู้ขอเบิก:</p>
+                                    <p id="tdm_requester" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_department_label">สังกัดฝ่าย/แผนก:</p>
+                                    <p id="tdm_department" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div id="tdm_machine_container">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_machine_label">ใช้งานสำหรับเครื่องจักร:</p>
+                                    <p id="tdm_machine" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div id="tdm_serial_container">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider" id="tdm_serial_label">Serial Number:</p>
+                                    <p id="tdm_serial_number" class="font-bold text-gray-700"></p>
+                                </div>
+                                <div class="col-span-1 sm:col-span-2">
+                                    <p class="text-xs text-gray-400 font-semibold uppercase tracking-wider">หมายเหตุเพิ่มเติม:</p>
+                                    <p id="tdm_note" class="text-gray-600 bg-white p-3 rounded-xl border border-gray-200 mt-1 min-h-[40px] whitespace-pre-line text-xs leading-relaxed"></p>
+                                </div>
+                            </div>
+                            
+                            <!-- ตารางรายการสินค้า -->
+                            <div class="border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                                <div class="overflow-x-auto w-full table-scroll">
+                                    <table class="min-w-full text-left text-xs whitespace-nowrap">
+                                        <thead class="bg-slate-800 text-white">
+                                            <tr id="tdmTableHeaderRow">
+                                                <th class="p-3 font-medium">รหัสอะไหล่</th>
+                                                <th class="p-3 font-medium">ชื่อรายการสินค้า</th>
+                                                <th class="p-3 font-medium text-right">จำนวนเบิก</th>
+                                                <th class="p-3 font-medium text-right">ราคาต่อหน่วย</th>
+                                                <th class="p-3 font-medium text-right">ยอดรวม</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tdmItemsTableBody" class="divide-y divide-gray-100 bg-white">
+                                            <!-- เรนเดอร์ด้วย JS -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- มูลค่ารวมสุทธิ -->
+                            <div id="tdm_total_price_container" class="flex justify-between items-center bg-blue-50 border border-blue-100 p-4 rounded-xl">
+                                <span class="text-sm font-bold text-blue-800">มูลค่ารวมใบเบิกสุทธิ:</span>
+                                <span id="tdm_total_price" class="text-xl font-extrabold text-blue-700">฿0.00</span>
+                            </div>
+                        </div>
+                        
+                        <div class="p-5 bg-slate-50 border-t border-gray-100 flex justify-between items-center flex-shrink-0">
+                            <!-- ปุ่มยกเลิกใบเบิกสินค้า (คืนสต็อก) และลบรายการ (Admin เท่านั้น) -->
+                            <div class="flex gap-2">
+                                <button id="tdmCancelBtn" onclick="" class="px-4 py-2.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 hover:border-red-600 transition rounded-xl font-semibold text-sm flex items-center gap-1">
+                                    <i class="fa-solid fa-ban"></i>
+                                    ยกเลิกและคืนสต็อก
+                                </button>
+                                <button id="tdmDeleteBtn" onclick="" class="px-4 py-2.5 bg-red-100 hover:bg-red-700 text-red-700 hover:text-white border border-red-200 hover:border-red-700 transition rounded-xl font-semibold text-sm flex items-center gap-1 hidden">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                    ลบรายการประวัติ
+                                </button>
+                            </div>
+                            
+                            <div class="flex gap-2">
+                                <button onclick="closeTransactionDetailModal()" class="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-100 transition font-medium text-sm">ปิด</button>
+                                <button id="tdmPrintBtn" onclick="" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-600/20 transition font-semibold text-sm flex items-center gap-1.5">
+                                    <i class="fa-solid fa-print"></i>
+                                    พิมพ์ใบเบิกอะไหล่
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ================== QR Code Modal ================== -->
+    <div class="flex h-screen overflow-hidden w-full relative">
+        
+        <!-- Sidebar Backdrop -->
+        <div id="sidebarBackdrop" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden md:hidden transition-opacity" onclick="toggleSidebar()"></div>
+
+        <!-- Sidebar (ซ้าย) -->
+        <!-- Sidebar (ซ้าย) -->
+        <aside id="sidebar" class="bg-slate-800 text-white w-72 md:w-64 flex-shrink-0 flex flex-col absolute md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform z-50 h-full shadow-2xl md:shadow-none"></aside>
+
+        <!-- Main Content (ขวา) -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden w-full bg-slate-50 relative">
+            
+            <!-- Mobile Header -->
+            <header class="bg-white shadow-sm flex items-center justify-between p-4 md:hidden z-30 sticky top-0">
+                <div class="flex items-center gap-3">
+                    <button class="text-slate-600 hover:text-blue-600 focus:outline-none p-1.5 rounded-md hover:bg-slate-100 transition" onclick="toggleSidebar()">
+                        <i class="fa-solid fa-bars text-xl"></i>
+                    </button>
+                    <h1 class="text-lg font-bold text-slate-800 truncate whitespace-nowrap"><i class="fa-solid fa-gears text-blue-600 mr-2 hidden sm:inline-block"></i> Spare Parts</h1>
+                </div>
+                <!-- ปุ่ม Refresh บนมือถือ -->
+                <button onclick="fetchData(true)" class="text-slate-600 hover:text-blue-600 p-2 rounded-xl hover:bg-slate-100 transition duration-200 flex items-center gap-1.5 text-sm font-semibold border border-gray-200 shadow-sm" title="รีเฟรชข้อมูล">
+                    <i class="fa-solid fa-rotate text-blue-500"></i>
+                    <span>รีเฟรช</span>
+                </button>
+            </header>
+
+            <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-24 w-full relative">
+                
+                <section id="view-pos" class="view-section hidden w-full h-[calc(100vh-130px)] flex flex-col lg:flex-row gap-4 lg:gap-6 relative z-10">
+                    <!-- Mobile Bottom Sheet Cart (Visible only on mobile/tablet) -->
+                    <div id="posMobileBottomSheetBackdrop" class="fixed inset-0 bg-black/60 z-40 hidden backdrop-blur-sm" onclick="toggleMobileCart(false)"></div>
+                    <div id="posMobileBottomSheet" class="fixed bottom-0 left-0 right-0 bg-white rounded-t-[32px] shadow-[0_-8px_30px_rgb(0,0,0,0.12)] z-50 transition-all duration-300 transform translate-y-full flex flex-col lg:hidden max-h-[85vh]">
+                        <!-- Header (Always visible when there are items) -->
+                        <div onclick="toggleMobileCart()" class="p-4 border-b border-gray-150 flex items-center justify-between cursor-pointer select-none bg-white rounded-t-[32px] flex-shrink-0">
+                            <div class="flex items-center gap-3">
+                                <div class="w-12 h-12 rounded-full bg-[#f4ebd0]/50 flex items-center justify-center relative">
+                                    <i class="fa-solid fa-shopping-cart text-[#8b5a2b] text-base"></i>
+                                    <span id="mobileCartBadge" class="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-white">0</span>
+                                </div>
+                                <div class="text-left">
+                                    <h4 class="font-bold text-slate-800 text-sm leading-snug">ตะกร้าเบิกอะไหล่</h4>
+                                    <p id="mobileCartSubtitle" class="text-[11px] text-gray-500 mt-0.5">มี 0 ชิ้นในตะกร้า</p>
+                                </div>
+                            </div>
+                            <button type="button" class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition">
+                                <i id="mobileCartChevron" class="fa-solid fa-chevron-up text-sm"></i>
+                            </button>
+                        </div>
+
+                        <!-- Body (Requisition form + Cart items list) -->
+                        <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-[#fafafa]">
+                            <!-- ข้อมูลการเบิก Section -->
+                            <div class="text-left">
+                                <h5 class="text-xs font-bold text-slate-500 mb-2.5 flex items-center gap-1.5 uppercase tracking-wider">
+                                    <i class="fa-solid fa-id-card text-slate-400"></i>ข้อมูลการเบิก
+                                </h5>
+                                <div class="space-y-3 bg-white p-4 rounded-2xl border border-gray-200/60 shadow-sm">
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-gray-500 mb-1">ชื่อ-สกุล ผู้เบิก <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <i class="fa-solid fa-user-tag absolute left-3 top-3 text-gray-400 text-xs"></i>
+                                            <input type="text" id="mobile_pos_requester" placeholder="ระบุชื่อ-สกุล ผู้เบิก" class="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 text-xs font-semibold">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-gray-500 mb-1">แผนก/ฝ่ายงาน <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <i class="fa-solid fa-users-gear absolute left-3 top-3 text-gray-400 text-xs"></i>
+                                            <input type="text" id="mobile_pos_department" placeholder="ระบุแผนก/ฝ่ายงาน" class="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 text-xs font-semibold">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-gray-500 mb-1">เครื่องจักร <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <i class="fa-solid fa-industry absolute left-3 top-3 text-gray-400 text-xs"></i>
+                                            <input type="text" id="mobile_pos_machine" list="mobile_pos_machines_list" placeholder="ระบุหรือค้นหาเครื่องจักร" autocomplete="off" class="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 text-xs font-semibold bg-white">
+                                            <datalist id="mobile_pos_machines_list"></datalist>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-gray-500 mb-1">Serial Number <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <i class="fa-solid fa-barcode absolute left-3 top-3 text-gray-400 text-xs"></i>
+                                            <input type="text" id="mobile_pos_serial_number" placeholder="ระบุ Serial Number" class="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 text-xs font-semibold">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-bold text-gray-500 mb-1">วัตถุประสงค์การเบิก / หมายเหตุ <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <i class="fa-solid fa-pen-nib absolute left-3 top-3 text-gray-400 text-xs"></i>
+                                            <input type="text" id="mobile_pos_note" placeholder="ระบุวัตถุประสงค์การเบิก" class="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 text-xs font-semibold">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- รายการอะไหล่ในตะกร้า Section -->
+                            <div class="text-left">
+                                <h5 class="text-xs font-bold text-slate-500 mb-2 flex items-center gap-1.5 uppercase tracking-wider">
+                                    <i class="fa-solid fa-box-archive text-slate-400"></i>รายการอะไหล่ในตะกร้า
+                                </h5>
+                                <div id="mobileCartItemsList" class="space-y-2">
+                                    <!-- โหลดทาง JS -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Footer Summary & Actions -->
+                        <div class="p-4 bg-white border-t border-gray-150 flex-shrink-0">
+                            <div class="flex justify-between items-center mb-3 text-sm">
+                                <span class="font-medium text-slate-500">รวมจำนวนชิ้น:</span>
+                                <span class="font-bold text-slate-800"><span id="mobileCartTotalQty" class="text-lg text-green-600 font-extrabold mr-1">0</span> ชิ้น</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="clearPOSCart()" class="w-11 h-11 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-xl flex items-center justify-center transition" title="เคลียร์ตะกร้า">
+                                    <i class="fa-solid fa-trash-alt text-sm"></i>
+                                </button>
+                                <button onclick="submitMobilePOSCheckout()" id="mobilePOSCheckoutBtn" class="flex-1 h-11 bg-[#10b981] hover:bg-[#0d9488] text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/10">
+                                    <i class="fa-solid fa-circle-check text-sm"></i>
+                                    ยืนยันการเบิก
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- ฝั่งซ้าย: รายการอะไหล่ทั้งหมด -->
+                    <div id="posLeftPanel" class="flex-1 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-full overflow-hidden">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 flex-shrink-0">
+                            <div>
+                                <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-calculator text-amber-500 mr-2"></i>ทำรายการเบิกอะไหล่ (POS)</h2>
+                                <p class="text-xs text-gray-500">คลิกที่อะไหล่เพื่อเพิ่มเข้าตะกร้า หรือยิงบาร์โค้ด</p>
+                            </div>
+                            <!-- ช่องสแกนบาร์โค้ด -->
+                            <div class="w-full sm:w-80 flex-shrink-0 flex gap-2">
+                                <div class="relative flex-1">
+                                    <i class="fa-solid fa-barcode absolute left-3 top-3 text-amber-500 animate-pulse"></i>
+                                    <input type="text" id="posBarcodeScanner" onkeydown="handlePOSBarcode(event)" placeholder="ยิงสแกนรหัส หรือสแกน QR..." class="w-full pl-9 pr-4 py-2 border-2 border-amber-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/50 bg-amber-50/20 text-xs font-bold tracking-wider placeholder-amber-700 transition">
+                                </div>
+                                <button type="button" onclick="openCameraScanner()" class="px-3.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-xl flex items-center justify-center transition shadow-md shadow-amber-500/20" title="สแกนด้วยกล้อง">
+                                    <i class="fa-solid fa-camera text-base"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- ตัวกรองค้นหาใน POS -->
+                        <div class="flex flex-col sm:flex-row gap-2.5 mb-4 flex-shrink-0">
+                            <div class="relative flex-1">
+                                <i class="fa-solid fa-search absolute left-3 top-3.5 text-gray-400"></i>
+                                <input type="text" id="posSearchInput" onkeyup="renderPOSGrid()" placeholder="ค้นหารหัส หรือชื่ออะไหล่..." class="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm">
+                            </div>
+                            
+                            <!-- Searchable Category Filter in POS -->
+                            <div id="posFilterCategoryContainer" class="relative w-full sm:w-48 flex-shrink-0">
+                                <div class="relative">
+                                    <input type="text" id="input_posCategoryFilter" placeholder="-- ทุกประเภทอะไหล่ --" 
+                                            onfocus="openPOSCustomSelect('category')" 
+                                            onkeyup="filterPOSCustomSelect('category')"
+                                            autocomplete="off"
+                                            class="w-full p-2.5 pr-8 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white text-sm shadow-sm transition cursor-pointer text-gray-700">
+                                    <i class="fa-solid fa-chevron-down absolute right-3.5 top-3.5 text-gray-400 pointer-events-none text-xs"></i>
+                                </div>
+                                <div id="dropdown_posCategoryFilter" class="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl hidden max-h-60 overflow-y-auto text-sm"></div>
+                                <input type="hidden" id="posCategoryFilter" value="all">
+                            </div>
+
+                            <!-- Searchable Machine Filter in POS -->
+                            <div id="posFilterMachineContainer" class="relative w-full sm:w-48 flex-shrink-0">
+                                <div class="relative">
+                                    <input type="text" id="input_posMachineFilter" placeholder="-- ทุกเครื่องจักร --" 
+                                            onfocus="openPOSCustomSelect('machine')" 
+                                            onkeyup="filterPOSCustomSelect('machine')"
+                                            autocomplete="off"
+                                            class="w-full p-2.5 pr-8 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white text-sm shadow-sm transition cursor-pointer text-gray-700">
+                                    <i class="fa-solid fa-chevron-down absolute right-3.5 top-3.5 text-gray-400 pointer-events-none text-xs"></i>
+                                </div>
+                                <div id="dropdown_posMachineFilter" class="absolute z-50 w-full mt-1 bg-white border border-gray-100 rounded-xl shadow-xl hidden max-h-60 overflow-y-auto text-sm"></div>
+                                <input type="hidden" id="posMachineFilter" value="all">
+                            </div>
+                        </div>
+                        <!-- ตารางกริดแสดงสินค้าสำหรับ POS -->
+                        <div id="posProductGrid" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-100 hide-scroll">
+                            <!-- อะไหล่ใน POS จะถูกโหลดผ่าน JS -->
+                        </div>
+                    </div>
+
+                    <!-- ฝั่งขวา: ตะกร้าสะสมยอดเบิก -->
+                    <div id="posRightPanel" class="w-full lg:w-[380px] xl:w-[420px] flex-shrink-0 bg-slate-900 rounded-2xl shadow-xl flex flex-col h-full text-white border border-slate-800 overflow-hidden hidden lg:flex">
+                        <!-- ส่วนหัวตะกร้า -->
+                        <div class="p-4 bg-slate-800/80 border-b border-slate-700/50 flex justify-between items-center flex-shrink-0">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-shopping-basket text-amber-400 text-lg"></i>
+                                <span class="font-bold text-sm tracking-wide">ตะกร้าอะไหล่เบิกจ่าย</span>
+                            </div>
+                            <button onclick="clearPOSCart()" class="text-xs text-red-400 hover:text-red-300 font-bold flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg border border-red-500/20 transition"><i class="fa-solid fa-trash-alt"></i> เคลียร์</button>
+                        </div>
+                        
+                        <!-- รายการสินค้าในตะกร้า -->
+                        <div id="posCartList" class="flex-1 overflow-y-auto p-4 space-y-3 hide-scroll">
+                            <!-- จะถูกเรนเดอร์ผ่าน JS -->
+                        </div>
+                        
+                        <!-- สรุปท้ายใบเบิก -->
+                        <div class="p-5 bg-slate-800/50 border-t border-slate-700/50 flex-shrink-0">
+                            <div class="space-y-2.5 mb-4">
+                                <div class="flex justify-between text-xs text-slate-400 font-medium">
+                                    <span>จำนวนรายการ:</span>
+                                    <span id="posCartCount" class="font-bold text-white">0 รายการ (0 ชิ้น)</span>
+                                </div>
+                                <div class="flex justify-between items-center text-sm pt-2.5 border-t border-slate-700/50">
+                                    <span class="font-semibold text-slate-300">รวมมูลค่าทั้งสิ้น:</span>
+                                    <span id="posCartTotal" class="text-xl font-extrabold text-amber-400">฿0.00</span>
+                                </div>
+                            </div>
+                            <button onclick="openPOSCheckoutModal()" id="posCheckoutBtn" disabled class="w-full py-4 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold text-base rounded-xl transition shadow-lg shadow-amber-500/15 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-check-circle text-lg"></i>
+                                ดำเนินการยืนยันการเบิก
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Camera Scanner Modal -->
+                <section id="view-transactions" class="view-section hidden w-full relative z-10">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <div>
+                            <h2 class="text-2xl sm:text-3xl font-bold text-gray-800"><i class="fa-solid fa-receipt text-blue-500 mr-2"></i>ประวัติใบเบิกจ่ายอะไหล่</h2>
+                            <p class="text-gray-500 text-sm mt-1">ตรวจสอบใบเบิกอะไหล่ทั้งหมด ยกเลิกการเบิก หรือสั่งพิมพ์ใบสำคัญ</p>
+                        </div>
+                    </div>
+
+                    <!-- ตัวกรองประวัติ -->
+                    <div class="flex flex-col md:flex-row justify-start items-center gap-4 mb-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm w-full">
+                        <div class="relative w-full md:w-80 flex-shrink-0">
+                            <i class="fa-solid fa-search absolute left-3.5 top-3.5 text-gray-400"></i>
+                            <input type="text" id="searchTransactionInput" onkeyup="handleTransactionFilterChange()" placeholder="ค้นหา เลขที่ใบเบิก หรือพนักงาน..." class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm transition">
+                        </div>
+                        
+                        <div class="w-full md:w-56 flex-shrink-0">
+                            <select id="filterTransactionStatus" onchange="handleTransactionFilterChange()" class="w-full p-2.5 border border-gray-200 rounded-xl bg-white text-sm cursor-pointer text-gray-700">
+                                <option value="all">-- ทุกสถานะรายการ --</option>
+                                <option value="Success">ทำรายการสำเร็จ</option>
+                                <option value="Cancelled">ยกเลิกรายการเบิก</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- ตารางประวัติใบเบิก -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden w-full">
+                        <div class="overflow-x-auto w-full table-scroll pb-2">
+                            <table class="min-w-full text-left text-sm whitespace-nowrap">
+                                <thead class="bg-slate-800 text-white">
+                                    <tr>
+                                        <th class="p-4 w-12 text-center font-medium rounded-tl-lg">ลำดับ</th>
+                                        <th class="p-4 font-medium">เลขที่ใบเบิก</th>
+                                        <th class="p-4 font-medium">วันเวลาที่เบิก</th>
+                                        <th class="p-4 font-medium">ผู้ขอเบิกอะไหล่</th>
+                                        <th class="p-4 font-medium">แผนก/ฝ่าย</th>
+                                        <th class="p-4 font-medium">ใช้กับเครื่องจักร</th>
+                                        <th class="p-4 font-medium text-right text-blue-200">มูลค่าใบเบิก</th>
+                                        <th class="p-4 font-medium text-center">สถานะ</th>
+                                        <th class="p-4 font-medium text-center rounded-tr-lg">จัดการ</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactionTableBody" class="divide-y divide-gray-100 bg-white">
+                                    <!-- ประวัติจะถูกเรนเดอร์โดย JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Pagination Container for Transactions -->
+                    <div id="transactionsPaginationContainer" class="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white border border-slate-150 p-4 rounded-2xl shadow-sm mt-4 hidden">
+                        <div id="transactionsPaginationInfo" class="text-xs text-slate-500 font-medium"></div>
+                        <div id="transactionsPaginationControls" class="flex items-center gap-1"></div>
+                    </div>
+                </section>
+
+                <!-- ================== หน้า งานจัดซื้อ ================== -->
+        </main>
+    </div>
+
+    <!-- Datalists for Autocomplete -->
+    <datalist id="list_product_categories"></datalist>
+    <datalist id="list_product_groups"></datalist>
+    <datalist id="list_product_suppliers"></datalist>
+    <datalist id="list_product_storages"></datalist>
+    <datalist id="list_machine_groups"></datalist>
+    <datalist id="list_machine_suppliers"></datalist>
+    <datalist id="list_machine_storages"></datalist>
+
+    <!-- Firebase SDK (Compat Version for Vanilla JS) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics-compat.js"></script>
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBlg7rvhtJnQS1_NplnEXjnvXPGv-cSyNI",
+        authDomain: "ltd-laundry.firebaseapp.com",
+        databaseURL: "https://ltd-laundry-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "ltd-laundry",
+        storageBucket: "ltd-laundry.firebasestorage.app",
+        messagingSenderId: "869860390939",
+        appId: "1:869860390939:web:b77bdbe17342efccdee0be",
+        measurementId: "G-JHCWYTNE1G"
+      };
+      // Initialize Firebase & Analytics
+      firebase.initializeApp(firebaseConfig);
+      firebase.analytics();
+    </script>
+
+    <script src="js/common.js"></script>
+    <script src="js/requisition.js"></script>
+</body>
+</html>
