@@ -178,6 +178,7 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
                 if (initialView === 'view-manual' && typeof initManualView === 'function') initManualView();
                 if (initialView === 'view-manage-manuals' && typeof initManageManualsView === 'function') initManageManualsView();
                 if (initialView === 'view-user-management' && typeof fetchAndRenderUsersList === 'function') fetchAndRenderUsersList();
+                if (initialView === 'view-report' && typeof initReportView === 'function') initReportView();
                 if (initialView === 'view-purchase') {
                     if (typeof closePurchaseSubSection === 'function') closePurchaseSubSection();
                     const isAdmin = currentUser && currentUser.role === 'ADMIN';
