@@ -3176,31 +3176,43 @@ function exportRestockHistoryToExcel() {
 
         // ===== Report Analytics Client Logic =====
         async function initReportView() {
-            showLoading('กำลังโหลดข้อมูลรายงาน...');
+            window.reportReady = false; // ป้องกัน filterReport() แบบ spurious ระหว่างข้ามโหลด
+            // ถ้ามีข้อมูล cache อยู่แล้ว ให้ render ทันทีเลยโดยไม่ต้องรอ fetch
+            if (window.reportTransactions && window.reportTransactions.length > 0) {
+                window.reportReady = true;
+                try { buildReportFilterOptions(); filterReport(); } catch(e) { console.warn('Pre-render report failed:', e); }
+                window.reportReady = false; // reset ให้ fetch ใหม่แล้ว re-render
+            } else {
+                // แสดง loading indicator ขณะรอ fetch ครั้งแรก
+                const tbody = document.getElementById('reportTableBody');
+                if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="p-10 text-center text-gray-400"><i class="fa-solid fa-spinner fa-spin mr-2"></i>กำลังโหลดข้อมูล...</td></tr>`;
+            }
+
+            // Fetch ข้อมูลใหม่ (หรือจาก Firebase cache ที่เร็วมาก)
             try {
                 let transRes = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getTransactions' }) });
                 let result = await transRes.json();
                 if (result.status === 'success') {
                     window.reportTransactions = result.data || [];
-                    showToast('ดึงข้อมูลประวัติการเบิกจ่ายสำเร็จ ' + window.reportTransactions.length + ' รายการ', 'success');
                 } else {
-                    window.reportTransactions = [];
-                    showToast('ดึงข้อมูลประวัติไม่สำเร็จ: ' + result.message, 'error');
+                    if (!window.reportTransactions) window.reportTransactions = [];
+                    showToast('ดึงข้อมูลประวัติไม่สำเร็จ: ' + result.message, 'warning');
                 }
             } catch (err) {
-                window.reportTransactions = [];
-                console.error(err);
-                showToast('ไม่สามารถดึงข้อมูลประวัติการเบิกจ่ายมาทำรายงานได้: ' + err.message, 'error');
+                if (!window.reportTransactions) window.reportTransactions = [];
+                console.error('initReportView fetch error:', err);
+                showToast('ไม่สามารถดึงข้อมูลประวัติการเบิกจ่ายได้', 'error');
             }
-            
+
+            // Render ด้วยข้อมูลที่ได้มา
+            window.reportReady = true; // อนุญาตให้ filterReport() ทำงานได้แล้ว
             try {
                 buildReportFilterOptions();
                 filterReport();
             } catch (err) {
-                console.error("Error in buildReportFilterOptions/filterReport:", err);
+                console.error('Error in buildReportFilterOptions/filterReport:', err);
                 showToast('เกิดข้อผิดพลาดในการประมวลผลรายงาน: ' + err.message, 'error');
             }
-            hideLoading();
         }
 
         function buildReportFilterOptions() {
@@ -3218,7 +3230,9 @@ function exportRestockHistoryToExcel() {
             window.reportRequesters = reqs;
 
             // 4. Year Options (Buddhist Era / BE)
+            // ใช้ DOM API แทน innerHTML เพื่อป้องกัน onchange event ที่ไม่ตั้งใจ
             const yearSelect = document.getElementById('report_filter_year');
+            const currentYearVal = yearSelect.value;
             const years = [...new Set(reportTransactions.map(t => {
                 if (t.date && t.date.length >= 4) {
                     const yr = parseInt(t.date.substring(0, 4));
@@ -3227,10 +3241,20 @@ function exportRestockHistoryToExcel() {
                 return null;
             }))].filter(y => y !== null).sort((a, b) => b - a);
 
-            yearSelect.innerHTML = '<option value="all">-- ทุกปี --</option>';
+            // ลบ options เก่าทิ้งแล้วเพิ่มใหม่ด้วย DOM API (ไม่ trigger onchange)
+            while (yearSelect.options.length > 1) yearSelect.remove(1);
             years.forEach(y => {
-                yearSelect.insertAdjacentHTML('beforeend', `<option value="${y}">${y}</option>`);
+                const opt = document.createElement('option');
+                opt.value = String(y);
+                opt.textContent = String(y);
+                yearSelect.appendChild(opt);
             });
+            // คืนค่าที่เลือกอยู่ก่อนหน้า (ถ้ามี)
+            if (years.map(String).includes(String(currentYearVal))) {
+                yearSelect.value = currentYearVal;
+            } else {
+                yearSelect.value = 'all';
+            }
         }
 
         function openReportSelect(type) {
@@ -3369,6 +3393,9 @@ function exportRestockHistoryToExcel() {
         }
 
 function filterReport(resetPage = true) {
+    // Guard: ถ้า initReportView ยังไม่เสร็จ ให้รอก่อน (ป้องกัน onchange สอดแทรก)
+    if (!window.reportReady) return;
+
     // Access variables via window to bridge scope gap between local and global functions
     const transactions = window.reportTransactions || [];
     let reportCurrentPage = window.reportCurrentPage || 1;

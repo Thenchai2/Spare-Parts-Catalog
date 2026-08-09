@@ -397,6 +397,9 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
                 if (viewId === 'view-restock' && typeof initRestockView === 'function') {
                     initRestockView();
                 }
+                if (viewId === 'view-report' && typeof initReportView === 'function') {
+                    initReportView();
+                }
                 if (viewId === 'view-manual' && typeof initManualView === 'function') {
                     initManualView();
                 }
@@ -474,7 +477,7 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
                         
                         <li class="protected-nav-item hidden border-t border-slate-700/30 my-1 pt-1" data-view="divider-admin"></li>
                         <li class="protected-nav-item hidden" data-view="view-purchase"><a href="#" onclick="switchView('view-purchase', this);" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-cart-shopping mr-3 w-5 text-center flex-shrink-0 text-indigo-400"></i><span>งานจัดซื้อ</span></a></li>
-                        <li class="protected-nav-item hidden" data-view="view-report"><a href="#" onclick="switchView('view-report', this); if (typeof initReportView === 'function') initReportView();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-chart-pie mr-3 w-5 text-center flex-shrink-0 text-emerald-400"></i><span>Report</span></a></li>
+                        <li class="protected-nav-item hidden" data-view="view-report"><a href="#" onclick="switchView('view-report', this)" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-chart-pie mr-3 w-5 text-center flex-shrink-0 text-emerald-400"></i><span>Report</span></a></li>
                         <li class="protected-nav-item hidden" data-view="view-settings"><a href="#" onclick="switchView('view-settings', this); if (typeof initSettingsView === 'function') initSettingsView();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-cog mr-3 w-5 text-center flex-shrink-0 text-slate-400"></i><span>ตั้งค่าระบบ</span></a></li>
                         
                         <li id="nav-item-manual" data-view="view-manual"><a href="#" onclick="switchView('view-manual', this); if (typeof initManualView === 'function') initManualView();" class="menu-item flex items-center px-4 py-3.5 rounded-lg text-gray-300 hover:bg-slate-700 hover:text-white transition-all"><i class="fa-solid fa-book mr-3 w-5 text-center flex-shrink-0 text-purple-400"></i><span>คู่มือ</span></a></li>
