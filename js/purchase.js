@@ -21,6 +21,7 @@
         let purchaseOverviewSelectedYears = [];
         let selectedVolatileProduct = '';
         let selectedVolatileSupplier = '';
+        let transactions = [];
 
         function openPurchaseSubSection(key, title, iconClass, gradientClass) {
             const gridEl = document.getElementById('purchase-menu-grid');

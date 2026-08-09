@@ -1,4 +1,5 @@
         // ===== Settings & User Management System =====
+        let transactions = [];
 
         function initSettingsView() {
             if (!isLoggedIn || !currentUser) return;
