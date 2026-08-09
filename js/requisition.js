@@ -76,6 +76,7 @@
         // ===== POS (Point of Sale) Client Logic =====
         let posCart = [];
         let transactions = [];
+        let transactionsCurrentPage = 1;
 
         function initPOS() {
             posCart = [];
@@ -1059,6 +1060,90 @@
             }
             hideLoading();
         }
+
+        function handleTransactionFilterChange() {
+            transactionsCurrentPage = 1;
+            renderTransactionsTable();
+        }
+
+        function renderTransactionsTable() {
+            const tbody = document.getElementById('transactionTableBody');
+            const searchKeyword = (document.getElementById('searchTransactionInput')?.value || '').toLowerCase();
+            const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
+            const statusFilter = (document.getElementById('filterTransactionStatus')?.value) || 'all';
+            
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            // กรองข้อมูลสำหรับบทบาทั่วไป ให้เห็นเฉพาะของตัวเอง และเอาเฉพาะข้อมูลเบิกจ่าย (ไม่ใช่ Restock/รับเข้า)
+            let transactionsToRender = transactions.filter(t => t.status !== 'Restock' && t.machine_id !== 'PO_RECEIVE' && t.machine_id !== 'RESTOCK');
+            if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
+                transactionsToRender = transactionsToRender.filter(t => t.requester === currentUser.fullName);
+            }
+            
+            let filtered = transactionsToRender.filter(t => {
+                const textToSearch = `${t.id} ${t.requester} ${t.department}`.toLowerCase();
+                const matchSearch = keywords.length === 0 || keywords.every(kw => textToSearch.includes(kw));
+                const matchStatus = statusFilter === 'all' || t.status === statusFilter;
+                return matchSearch && matchStatus;
+            });
+            
+            const pageSize = 20;
+            const totalItems = filtered.length;
+            const totalPages = Math.ceil(totalItems / pageSize);
+
+            if (transactionsCurrentPage > totalPages) transactionsCurrentPage = totalPages;
+            if (transactionsCurrentPage < 1) transactionsCurrentPage = 1;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="p-10 text-center text-gray-400"><i class="fa-solid fa-receipt text-4xl mb-3 opacity-30 block"></i>ไม่พบข้อมูลใบเบิกที่ค้นหา</td></tr>`;
+                renderGenericPagination('transactionsPaginationContainer', 'transactionsPaginationInfo', 'transactionsPaginationControls', 0, 1, pageSize, 'changeTransactionsPage');
+                return;
+            }
+            
+            const startIndex = (transactionsCurrentPage - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginated = filtered.slice(startIndex, endIndex);
+
+            paginated.forEach((t, index) => {
+                const globalIndex = startIndex + index + 1;
+                const isCancelled = t.status === 'Cancelled';
+                let statusHtml = '';
+                if (isCancelled) {
+                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">ยกเลิกใบเบิก</span>`;
+                } else if (t.status === 'Restock') {
+                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">เติมสต็อก</span>`;
+                } else {
+                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">เบิกจ่ายสำเร็จ</span>`;
+                }
+                
+                const totalVal = t.status === 'Restock' ? '-' : `฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                
+                let tr = `
+                    <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 ${isCancelled ? 'bg-red-50/10' : ''}">
+                        <td class="p-4 text-center text-gray-500">${globalIndex}</td>
+                        <td class="p-4 font-bold text-gray-900">${escapeHTML(t.id)}</td>
+                        <td class="p-4 text-gray-500 text-xs font-semibold">${escapeHTML(formatDateTimeThai(t.date))}</td>
+                        <td class="p-4 text-gray-700 font-semibold">${escapeHTML(t.requester)}</td>
+                        <td class="p-4 text-gray-600">${escapeHTML(t.department)}</td>
+                        <td class="p-4 text-gray-500 font-medium">${escapeHTML(t.machine_id)}</td>
+                        <td class="p-4 text-right font-bold text-blue-600">฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                        <td class="p-4 text-center">${statusHtml}</td>
+                        <td class="p-4 text-center">
+                            <button onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm inline-flex items-center gap-1.5" title="ดูรายละเอียดใบเบิก"><i class="fa-solid fa-eye"></i> รายละเอียด</button>
+                        </td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', tr);
+            });
+
+            renderGenericPagination('transactionsPaginationContainer', 'transactionsPaginationInfo', 'transactionsPaginationControls', totalItems, transactionsCurrentPage, pageSize, 'changeTransactionsPage');
+        }
+
+        window.changeTransactionsPage = function(page) {
+            transactionsCurrentPage = page;
+            renderTransactionsTable();
+        };
 
 
         function openTransactionDetailModal(txId) {

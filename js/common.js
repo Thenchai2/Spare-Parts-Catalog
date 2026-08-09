@@ -1921,3 +1921,88 @@ window.fetch = async function (url, options) {
 };
 
 console.log("[Firebase Bypass] Interceptor activated successfully.");
+
+function renderGenericPagination(containerId, infoId, controlsId, totalItems, currentPage, pageSize, changePageFuncName) {
+    const container = document.getElementById(containerId);
+    const infoEl = document.getElementById(infoId);
+    const controlsEl = document.getElementById(controlsId);
+    if (!container) return;
+
+    const totalPages = Math.ceil(totalItems / pageSize);
+
+    if (totalItems === 0 || totalPages <= 1) {
+        container.classList.add('hidden');
+        if (infoEl) infoEl.innerHTML = '';
+        if (controlsEl) controlsEl.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('hidden');
+
+    const startItem = (currentPage - 1) * pageSize + 1;
+    const endItem = Math.min(currentPage * pageSize, totalItems);
+    if (infoEl) {
+        infoEl.innerHTML = `แสดง <span class="font-bold text-slate-800">${startItem} - ${endItem}</span> จากทั้งหมด <span class="font-bold text-slate-800">${totalItems}</span> รายการ (หน้า <span class="font-bold text-indigo-600">${currentPage}</span> / ${totalPages})`;
+    }
+
+    if (!controlsEl) return;
+
+    let buttonsHtml = '';
+
+    // First page <<
+    buttonsHtml += `
+        <button onclick="${changePageFuncName}(1)" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าแรก">
+            <i class="fa-solid fa-angles-left"></i>
+        </button>
+    `;
+
+    // Prev page <
+    buttonsHtml += `
+        <button onclick="${changePageFuncName}(${currentPage - 1})" ${currentPage === 1 ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าก่อนหน้า">
+            <i class="fa-solid fa-angle-left mr-1"></i> ก่อนหน้า
+        </button>
+    `;
+
+    // Page numbers
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+
+    if (startPage > 1) {
+        buttonsHtml += `<button onclick="${changePageFuncName}(1)" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">1</button>`;
+        if (startPage > 2) {
+            buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+        }
+    }
+
+    for (let p = startPage; p <= endPage; p++) {
+        if (p === currentPage) {
+            buttonsHtml += `<button class="px-3.5 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-500/20 cursor-default">${p}</button>`;
+        } else {
+            buttonsHtml += `<button onclick="${changePageFuncName}(${p})" class="px-3.5 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm">${p}</button>`;
+        }
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            buttonsHtml += `<span class="px-1 text-gray-400 text-xs font-bold">...</span>`;
+        }
+        buttonsHtml += `<button onclick="${changePageFuncName}(${totalPages})" class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition shadow-sm">${totalPages}</button>`;
+    }
+
+    // Next page >
+    buttonsHtml += `
+        <button onclick="${changePageFuncName}(${currentPage + 1})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าถัดไป">
+            ถัดไป <i class="fa-solid fa-angle-right ml-1"></i>
+        </button>
+    `;
+
+    // Last page >>
+    buttonsHtml += `
+        <button onclick="${changePageFuncName}(${totalPages})" ${currentPage === totalPages ? 'disabled class="px-3 py-1.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold cursor-not-allowed border border-gray-200"' : 'class="px-3 py-1.5 bg-white hover:bg-blue-50 border border-gray-200 text-slate-700 rounded-xl text-xs font-semibold transition active:scale-95 shadow-sm"'} title="หน้าสุดท้าย">
+            <i class="fa-solid fa-angles-right"></i>
+        </button>
+    `;
+
+    controlsEl.innerHTML = buttonsHtml;
+}
+

@@ -1,5 +1,9 @@
         // ===== Settings & User Management System =====
         let transactions = [];
+        // Report global variables — declared at module level so global functions (filterReport, exportReportToExcel, etc.) can access them
+        if (typeof window.reportFilteredProducts === 'undefined') window.reportFilteredProducts = [];
+        if (typeof window.reportProductUsageMap === 'undefined') window.reportProductUsageMap = new Map();
+        if (typeof window.reportCurrentPage === 'undefined') window.reportCurrentPage = 1;
 
         function initSettingsView() {
             if (!isLoggedIn || !currentUser) return;
@@ -3177,19 +3181,30 @@ function exportRestockHistoryToExcel() {
                 let transRes = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'getTransactions' }) });
                 let result = await transRes.json();
                 if (result.status === 'success') {
-                    transactions = result.data || [];
+                    window.reportTransactions = result.data || [];
+                    showToast('ดึงข้อมูลประวัติการเบิกจ่ายสำเร็จ ' + window.reportTransactions.length + ' รายการ', 'success');
+                } else {
+                    window.reportTransactions = [];
+                    showToast('ดึงข้อมูลประวัติไม่สำเร็จ: ' + result.message, 'error');
                 }
             } catch (err) {
+                window.reportTransactions = [];
                 console.error(err);
-                showToast('ไม่สามารถดึงข้อมูลประวัติการเบิกจ่ายมาทำรายงานได้', 'error');
+                showToast('ไม่สามารถดึงข้อมูลประวัติการเบิกจ่ายมาทำรายงานได้: ' + err.message, 'error');
             }
             
-            buildReportFilterOptions();
-            filterReport();
+            try {
+                buildReportFilterOptions();
+                filterReport();
+            } catch (err) {
+                console.error("Error in buildReportFilterOptions/filterReport:", err);
+                showToast('เกิดข้อผิดพลาดในการประมวลผลรายงาน: ' + err.message, 'error');
+            }
             hideLoading();
         }
 
         function buildReportFilterOptions() {
+            const reportTransactions = window.reportTransactions || [];
             // 1. Category Options
             const cats = [...new Set(db.products.map(p => p.category))].filter(c => c && c.trim() !== '').sort();
             window.reportCategories = cats;
@@ -3199,12 +3214,12 @@ function exportRestockHistoryToExcel() {
             window.reportMachines = machs;
 
             // 3. Requester Options
-            const reqs = [...new Set(transactions.map(t => t.requester))].filter(r => r && r.trim() !== '').sort();
+            const reqs = [...new Set(reportTransactions.map(t => t.requester))].filter(r => r && r.trim() !== '').sort();
             window.reportRequesters = reqs;
 
             // 4. Year Options (Buddhist Era / BE)
             const yearSelect = document.getElementById('report_filter_year');
-            const years = [...new Set(transactions.map(t => {
+            const years = [...new Set(reportTransactions.map(t => {
                 if (t.date && t.date.length >= 4) {
                     const yr = parseInt(t.date.substring(0, 4));
                     if (!isNaN(yr)) return yr + 543;
@@ -3311,90 +3326,6 @@ function exportRestockHistoryToExcel() {
             }
         }
 
-        function handleTransactionFilterChange() {
-            transactionsCurrentPage = 1;
-            renderTransactionsTable();
-        }
-
-        function renderTransactionsTable() {
-            const tbody = document.getElementById('transactionTableBody');
-            const searchKeyword = (document.getElementById('searchTransactionInput')?.value || '').toLowerCase();
-            const keywords = searchKeyword.split(/\s+/).filter(k => k.length > 0);
-            const statusFilter = (document.getElementById('filterTransactionStatus')?.value) || 'all';
-            
-            if (!tbody) return;
-            tbody.innerHTML = '';
-
-            // กรองข้อมูลสำหรับบทบาทั่วไป ให้เห็นเฉพาะของตัวเอง และเอาเฉพาะข้อมูลเบิกจ่าย (ไม่ใช่ Restock/รับเข้า)
-            let transactionsToRender = transactions.filter(t => t.status !== 'Restock' && t.machine_id !== 'PO_RECEIVE' && t.machine_id !== 'RESTOCK');
-            if (isLoggedIn && currentUser && currentUser.role !== 'ADMIN' && currentUser.role !== 'Manager') {
-                transactionsToRender = transactionsToRender.filter(t => t.requester === currentUser.fullName);
-            }
-            
-            let filtered = transactionsToRender.filter(t => {
-                const textToSearch = `${t.id} ${t.requester} ${t.department}`.toLowerCase();
-                const matchSearch = keywords.length === 0 || keywords.every(kw => textToSearch.includes(kw));
-                const matchStatus = statusFilter === 'all' || t.status === statusFilter;
-                return matchSearch && matchStatus;
-            });
-            
-            const pageSize = 20;
-            const totalItems = filtered.length;
-            const totalPages = Math.ceil(totalItems / pageSize);
-
-            if (transactionsCurrentPage > totalPages) transactionsCurrentPage = totalPages;
-            if (transactionsCurrentPage < 1) transactionsCurrentPage = 1;
-
-            if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="p-10 text-center text-gray-400"><i class="fa-solid fa-receipt text-4xl mb-3 opacity-30 block"></i>ไม่พบข้อมูลใบเบิกที่ค้นหา</td></tr>`;
-                renderGenericPagination('transactionsPaginationContainer', 'transactionsPaginationInfo', 'transactionsPaginationControls', 0, 1, pageSize, 'changeTransactionsPage');
-                return;
-            }
-            
-            const startIndex = (transactionsCurrentPage - 1) * pageSize;
-            const endIndex = startIndex + pageSize;
-            const paginated = filtered.slice(startIndex, endIndex);
-
-            paginated.forEach((t, index) => {
-                const globalIndex = startIndex + index + 1;
-                const isCancelled = t.status === 'Cancelled';
-                let statusHtml = '';
-                if (isCancelled) {
-                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">ยกเลิกใบเบิก</span>`;
-                } else if (t.status === 'Restock') {
-                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200">เติมสต็อก</span>`;
-                } else {
-                    statusHtml = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">เบิกจ่ายสำเร็จ</span>`;
-                }
-                
-                const totalVal = t.status === 'Restock' ? '-' : `฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-                
-                let tr = `
-                    <tr class="hover:bg-slate-50 transition border-b border-gray-150 last:border-0 ${isCancelled ? 'bg-red-50/10' : ''}">
-                        <td class="p-4 text-center text-gray-500">${globalIndex}</td>
-                        <td class="p-4 font-bold text-gray-900">${escapeHTML(t.id)}</td>
-                        <td class="p-4 text-gray-500 text-xs font-semibold">${escapeHTML(formatDateTimeThai(t.date))}</td>
-                        <td class="p-4 text-gray-700 font-semibold">${escapeHTML(t.requester)}</td>
-                        <td class="p-4 text-gray-600">${escapeHTML(t.department)}</td>
-                        <td class="p-4 text-gray-500 font-medium">${escapeHTML(t.machine_id)}</td>
-                        <td class="p-4 text-right font-bold text-blue-600">฿${t.total_price.toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        <td class="p-4 text-center">${statusHtml}</td>
-                        <td class="p-4 text-center">
-                            <button onclick="openTransactionDetailModal('${escapeForJS(t.id)}')" class="text-blue-600 hover:text-white bg-blue-50 hover:bg-blue-600 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-sm inline-flex items-center gap-1.5" title="ดูรายละเอียดใบเบิก"><i class="fa-solid fa-eye"></i> รายละเอียด</button>
-                        </td>
-                    </tr>
-                `;
-                tbody.insertAdjacentHTML('beforeend', tr);
-            });
-
-            renderGenericPagination('transactionsPaginationContainer', 'transactionsPaginationInfo', 'transactionsPaginationControls', totalItems, transactionsCurrentPage, pageSize, 'changeTransactionsPage');
-        }
-
-        window.changeTransactionsPage = function(page) {
-            transactionsCurrentPage = page;
-            renderTransactionsTable();
-        };
-
         function getActiveDocumentIds() {
             const selectedMach = document.getElementById('report_filter_mach').value;
             const selectedReq = document.getElementById('report_filter_req').value;
@@ -3403,7 +3334,7 @@ function exportRestockHistoryToExcel() {
             const startDate = document.getElementById('report_filter_start_date').value;
             const endDate = document.getElementById('report_filter_end_date').value;
 
-            let activeTx = transactions.filter(t => {
+            let activeTx = (window.reportTransactions || []).filter(t => {
                 if (t.status === 'Cancelled' || t.status === 'Restock') return false;
                 if (selectedReq !== 'all' && t.requester !== selectedReq) return false;
                 if (selectedMach !== 'all' && String(t.machine_id) !== String(selectedMach)) return false;
@@ -3438,8 +3369,13 @@ function exportRestockHistoryToExcel() {
         }
 
 function filterReport(resetPage = true) {
+    // Access variables via window to bridge scope gap between local and global functions
+    const transactions = window.reportTransactions || [];
+    let reportCurrentPage = window.reportCurrentPage || 1;
+
     if (resetPage) {
         reportCurrentPage = 1;
+        window.reportCurrentPage = 1;
     }
 
     const selectedMach = document.getElementById('report_filter_mach').value;
@@ -3486,7 +3422,7 @@ function filterReport(resetPage = true) {
         }
     });
 
-    let productsToRender = db.products;
+    let productsToRender = (db && db.products) ? db.products.slice() : [];
     const selectedCat = document.getElementById('report_filter_cat').value;
     if (selectedCat !== 'all') {
         productsToRender = productsToRender.filter(p => p.category === selectedCat);
@@ -3507,9 +3443,9 @@ function filterReport(resetPage = true) {
         return qty > 0;
     });
 
-    // Save to global variables for export
-    reportFilteredProducts = productsToRender;
-    reportProductUsageMap = productUsageMap;
+    // Save to window-level variables for export and pagination
+    window.reportFilteredProducts = productsToRender;
+    window.reportProductUsageMap = productUsageMap;
 
     let totalQtySum = 0;
     let totalCostSum = 0;
@@ -3533,6 +3469,7 @@ function filterReport(resetPage = true) {
 
     if (reportCurrentPage > totalPages) reportCurrentPage = totalPages;
     if (reportCurrentPage < 1) reportCurrentPage = 1;
+    window.reportCurrentPage = reportCurrentPage;
 
     renderReportPagination(totalItems, reportCurrentPage, totalPages);
 
@@ -3576,7 +3513,7 @@ function filterReport(resetPage = true) {
 }
 
 function changeReportPage(page) {
-    reportCurrentPage = page;
+    window.reportCurrentPage = page;
     filterReport(false);
     const viewSection = document.getElementById('view-report');
     if (viewSection) {
@@ -3677,6 +3614,8 @@ function clearReportFilters() {
 }
 
 function exportReportToExcel() {
+    const reportFilteredProducts = window.reportFilteredProducts || [];
+    const reportProductUsageMap = window.reportProductUsageMap || new Map();
     if (reportFilteredProducts.length === 0) {
         showToast('ไม่มีข้อมูลที่จะส่งออก', 'warning');
         return;
