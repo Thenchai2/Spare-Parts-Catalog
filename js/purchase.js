@@ -14,6 +14,8 @@
         let purchaseHistorySearchQuery = '';
         let purchaseHistoryCategoryFilter = '';
         let purchaseHistoryGroupFilter = '';
+        let receiveHistoryCategoryFilter = '';
+        let receiveHistoryGroupFilter = '';
         let purchaseOverviewSearchQuery = '';
         let purchaseOverviewCategoryFilter = '';
         let purchaseOverviewGroupFilter = '';
@@ -339,19 +341,34 @@
                         <!-- Receive-in History View -->
                         <div id="view-history-receive-section" class="space-y-6 hidden">
                             <!-- Search & Filter Row for Receiving -->
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div class="flex items-center gap-3 flex-wrap">
+                            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                <!-- Left Filters -->
+                                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-wrap">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-semibold text-slate-500">ประเภทอะไหล่:</span>
+                                        <select onchange="handleReceiveHistoryCategoryFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
+                                            <option value="">ทั้งหมด</option>
+                                            ${categoryOptions}
+                                        </select>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs font-semibold text-slate-500">กลุ่มสินค้า:</span>
+                                        <select onchange="handleReceiveHistoryGroupFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[150px]">
+                                            <option value="">ทั้งหมด</option>
+                                            ${groupOptions}
+                                        </select>
+                                    </div>
                                     <button onclick="exportReceiveHistoryToExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
                                         <i class="fa-solid fa-file-excel"></i> ส่งออก Excel
                                     </button>
-                                ${isAdmin ? `
-                                <button onclick="deleteAllReceiveHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
-                                    <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
-                                </button>
-                                ` : ''}
+                                    ${isAdmin ? `
+                                    <button onclick="deleteAllReceiveHistory()" class="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95 self-start">
+                                        <i class="fa-solid fa-trash-can"></i> ลบประวัติทั้งหมด
+                                    </button>
+                                    ` : ''}
                                 </div>
-                                <!-- Search Field -->
-                                <div class="relative max-w-sm w-full sm:w-80">
+                                <!-- Right Search -->
+                                <div class="relative max-w-sm w-full lg:w-80">
                                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                                         <i class="fa-solid fa-magnifying-glass text-slate-400 text-xs"></i>
                                     </span>
@@ -377,6 +394,8 @@
                     purchaseHistorySearchQuery = '';
                     purchaseHistoryCategoryFilter = '';
                     purchaseHistoryGroupFilter = '';
+                    receiveHistoryCategoryFilter = '';
+                    receiveHistoryGroupFilter = '';
                     setPurchaseHistoryTab('po-history');
                 }, 50);
             } else if (key === 'overview') {
@@ -498,6 +517,29 @@
                                 <div class="overflow-y-auto max-h-[320px] pr-1 scrollbar-thin space-y-3" id="overview-monthly-comparison-list">
                                     <!-- Rendered dynamically as cards -->
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- PRODUCT GROUP ANALYSIS SECTION -->
+                        <div class="bg-white p-5 rounded-2xl border border-slate-150 shadow-sm space-y-4">
+                            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                <i class="fa-solid fa-layer-group text-indigo-500"></i> วิเคราะห์และเปรียบเทียบยอดจัดซื้อตามกลุ่มสินค้า (Product Group)
+                            </h3>
+                            <div class="overflow-x-auto border border-slate-100 rounded-xl bg-white table-scroll">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-50 border-b border-slate-150 font-bold text-slate-600">
+                                            <th class="p-3">กลุ่มสินค้า</th>
+                                            <th class="p-3 text-center">จำนวนที่สั่ง (รายการ)</th>
+                                            <th class="p-3 text-right">ยอดสั่งซื้อรวม</th>
+                                            <th class="p-3 text-right">ยอดได้รับจริงรวม</th>
+                                            <th class="p-3 text-center" style="width: 120px;">สัดส่วนสั่งซื้อ (%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="overview-group-analysis-tbody" class="divide-y divide-slate-100">
+                                        <!-- Rendered dynamically -->
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
@@ -2380,6 +2422,24 @@
                     });
                 }
 
+                // Apply Category and Group filters
+                if (receiveHistoryCategoryFilter || receiveHistoryGroupFilter) {
+                    receiveGroups = receiveGroups.filter(g => {
+                        const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                        const firstTx = g.transactions && g.transactions[0] ? g.transactions[0] : null;
+                        const firstItem = firstTx && firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                        let productId = firstItem ? firstItem.product_id : '';
+                        if (po && po.productId) productId = po.productId;
+                        
+                        const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                        if (!prod) return false;
+                        
+                        if (receiveHistoryCategoryFilter && prod.category !== receiveHistoryCategoryFilter) return false;
+                        if (receiveHistoryGroupFilter && prod.group !== receiveHistoryGroupFilter) return false;
+                        return true;
+                    });
+                }
+
                 if (receiveGroups.length === 0) {
                     container.innerHTML = `
                         <div class="border border-slate-150 rounded-2xl p-8 bg-slate-50/50 flex flex-col items-center justify-center text-center py-12">
@@ -2599,6 +2659,18 @@
 
         window.handleReceiveHistorySearch = function() {
             receiveHistoryCurrentPage = 1;
+            renderReceiveHistoryTable();
+        };
+
+        window.handleReceiveHistoryCategoryFilter = function(val) {
+            receiveHistoryCurrentPage = 1;
+            receiveHistoryCategoryFilter = val.trim();
+            renderReceiveHistoryTable();
+        };
+
+        window.handleReceiveHistoryGroupFilter = function(val) {
+            receiveHistoryCurrentPage = 1;
+            receiveHistoryGroupFilter = val.trim();
             renderReceiveHistoryTable();
         };
 
@@ -3257,6 +3329,24 @@
                     const supplierName = (po && po.supplier) ? po.supplier : (prod && prod.supplier ? prod.supplier : '');
                     if (supplierName && supplierName.toLowerCase().includes(searchKeyword)) return true;
                     return false;
+                });
+            }
+
+            // Apply Category and Group filters
+            if (receiveHistoryCategoryFilter || receiveHistoryGroupFilter) {
+                receiveGroups = receiveGroups.filter(g => {
+                    const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
+                    const firstTx = g.transactions && g.transactions[0] ? g.transactions[0] : null;
+                    const firstItem = firstTx && firstTx.items && firstTx.items[0] ? firstTx.items[0] : null;
+                    let productId = firstItem ? firstItem.product_id : '';
+                    if (po && po.productId) productId = po.productId;
+                    
+                    const prod = db.products ? db.products.find(p => String(p.id).trim().toLowerCase() === String(productId).trim().toLowerCase()) : null;
+                    if (!prod) return false;
+                    
+                    if (receiveHistoryCategoryFilter && prod.category !== receiveHistoryCategoryFilter) return false;
+                    if (receiveHistoryGroupFilter && prod.group !== receiveHistoryGroupFilter) return false;
+                    return true;
                 });
             }
 
@@ -3932,6 +4022,72 @@
             });
             if (prevDrillSupVal && purchaseOverviewSuppliers.some(x => x.supplierName === prevDrillSupVal)) {
                 drillSupplierPriceTrend(prevDrillSupVal);
+            }
+
+            // Product Group Analysis Calculation and Rendering
+            const groupData = {};
+            let grandTotalOrdered = 0;
+
+            activeOrders.forEach(o => {
+                const prod = products.find(p => String(p.id).trim() === String(o.productId).trim());
+                const grp = prod ? (prod.group || 'ไม่ระบุ') : 'ไม่ระบุ';
+                
+                if (!groupData[grp]) {
+                    groupData[grp] = {
+                        name: grp,
+                        count: 0,
+                        orderedVal: 0,
+                        receivedVal: 0
+                    };
+                }
+
+                let cost = parseFloat(o.unitCost) || 0;
+                if (cost === 0) {
+                    cost = prod ? (parseFloat(prod.cost) || 0) : 0;
+                }
+                const oVal = o.orderedQty * cost;
+                const rVal = o.receivedQty * cost;
+
+                groupData[grp].count++;
+                groupData[grp].orderedVal += oVal;
+                groupData[grp].receivedVal += rVal;
+                grandTotalOrdered += oVal;
+            });
+
+            const groupList = Object.values(groupData).sort((a, b) => b.orderedVal - a.orderedVal);
+
+            const groupTbody = document.getElementById('overview-group-analysis-tbody');
+            if (groupTbody) {
+                if (groupList.length === 0) {
+                    groupTbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="p-8 text-center text-slate-400 text-xs">
+                                <i class="fa-solid fa-folder-open text-xl mb-1 block text-slate-300"></i>
+                                ไม่มีข้อมูลสำหรับวิเคราะห์กลุ่มสินค้า
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    groupTbody.innerHTML = groupList.map(g => {
+                        const pct = grandTotalOrdered > 0 ? (g.orderedVal / grandTotalOrdered * 100) : 0;
+                        return `
+                            <tr class="hover:bg-slate-50/50 transition">
+                                <td class="p-3 font-semibold text-slate-700">${escapeHTML(g.name)}</td>
+                                <td class="p-3 text-center text-slate-600 font-bold">${g.count}</td>
+                                <td class="p-3 text-right text-slate-800 font-bold font-mono">฿${g.orderedVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                <td class="p-3 text-right text-emerald-600 font-bold font-mono">฿${g.receivedVal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                <td class="p-3 text-center">
+                                    <div class="flex items-center gap-2 justify-center">
+                                        <div class="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden hidden sm:block">
+                                            <div class="bg-indigo-500 h-1.5 rounded-full" style="width: ${pct}%"></div>
+                                        </div>
+                                        <span class="text-[10px] font-bold text-indigo-600 font-mono">${pct.toFixed(1)}%</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
             }
         };
 
