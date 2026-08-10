@@ -730,10 +730,10 @@
             // Filter by search query
             if (purchaseSearchQuery) {
                 filtered = filtered.filter(o => 
-                    o.poNumber.toLowerCase().includes(purchaseSearchQuery) ||
-                    o.prNumber.toLowerCase().includes(purchaseSearchQuery) ||
-                    o.productId.toLowerCase().includes(purchaseSearchQuery) ||
-                    o.productName.toLowerCase().includes(purchaseSearchQuery)
+                    String(o.poNumber || '').toLowerCase().includes(purchaseSearchQuery) ||
+                    String(o.prNumber || '').toLowerCase().includes(purchaseSearchQuery) ||
+                    String(o.productId || '').toLowerCase().includes(purchaseSearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(purchaseSearchQuery)
                 );
             }
 
@@ -804,10 +804,10 @@
             // Filter by search query
             if (dashboardOrdersSearchQuery) {
                 filtered = filtered.filter(o => 
-                    o.poNumber.toLowerCase().includes(dashboardOrdersSearchQuery) ||
-                    o.prNumber.toLowerCase().includes(dashboardOrdersSearchQuery) ||
-                    o.productId.toLowerCase().includes(dashboardOrdersSearchQuery) ||
-                    o.productName.toLowerCase().includes(dashboardOrdersSearchQuery)
+                    String(o.poNumber || '').toLowerCase().includes(dashboardOrdersSearchQuery) ||
+                    String(o.prNumber || '').toLowerCase().includes(dashboardOrdersSearchQuery) ||
+                    String(o.productId || '').toLowerCase().includes(dashboardOrdersSearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(dashboardOrdersSearchQuery)
                 );
             }
 
@@ -1235,8 +1235,8 @@
 
             if (draftOrdersSearchQuery) {
                 filtered = filtered.filter(o => 
-                    o.productId.toLowerCase().includes(draftOrdersSearchQuery) ||
-                    o.productName.toLowerCase().includes(draftOrdersSearchQuery)
+                    String(o.productId || '').toLowerCase().includes(draftOrdersSearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(draftOrdersSearchQuery)
                 );
             }
 
@@ -1636,10 +1636,10 @@
             // Filter by search query (PO Number, PR Number, รหัสสินค้า, ชื่อสินค้า)
             if (manageOrdersSearchQuery) {
                 filtered = filtered.filter(o => 
-                    (o.poNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
-                    (o.prNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
-                    (o.productId || '').toLowerCase().includes(manageOrdersSearchQuery) ||
-                    (o.productName || '').toLowerCase().includes(manageOrdersSearchQuery)
+                    String(o.poNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    String(o.prNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    String(o.productId || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(manageOrdersSearchQuery)
                 );
             }
 
@@ -2019,10 +2019,10 @@
             // Filter by search query (PO, PR, Product ID, Product Name)
             if (purchaseHistorySearchQuery) {
                 processedOrders = processedOrders.filter(o => 
-                    (o.poNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
-                    (o.prNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
-                    (o.productId || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
-                    (o.productName || '').toLowerCase().includes(purchaseHistorySearchQuery)
+                    String(o.poNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    String(o.prNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    String(o.productId || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(purchaseHistorySearchQuery)
                 );
             }
 
@@ -2348,7 +2348,7 @@
                 // Apply search filter
                 if (searchKeyword) {
                     receiveGroups = receiveGroups.filter(g => {
-                        if (g.poNumber && g.poNumber.toLowerCase().includes(searchKeyword)) return true;
+                        if (g.poNumber && String(g.poNumber).toLowerCase().includes(searchKeyword)) return true;
                         if (g.txId && String(g.txId).toLowerCase().includes(searchKeyword)) return true;
                         
                         const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
@@ -3098,10 +3098,10 @@
 
             if (purchaseHistorySearchQuery) {
                 processedOrders = processedOrders.filter(o => 
-                    (o.poNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
-                    (o.prNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
-                    (o.productId || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
-                    (o.productName || '').toLowerCase().includes(purchaseHistorySearchQuery)
+                    String(o.poNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    String(o.prNumber || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    String(o.productId || '').toLowerCase().includes(purchaseHistorySearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(purchaseHistorySearchQuery)
                 );
             }
 
@@ -3245,7 +3245,7 @@
 
             if (searchKeyword) {
                 receiveGroups = receiveGroups.filter(g => {
-                    if (g.poNumber && g.poNumber.toLowerCase().includes(searchKeyword)) return true;
+                    if (g.poNumber && String(g.poNumber).toLowerCase().includes(searchKeyword)) return true;
                     if (g.txId && String(g.txId).toLowerCase().includes(searchKeyword)) return true;
                     
                     const po = g.poNumber ? (db.purchaseOrders ? db.purchaseOrders.find(o => String(o.poNumber).trim() === g.poNumber) : null) : null;
@@ -3414,8 +3414,8 @@
             // Filter by search query (match Product ID or Product Name)
             if (purchaseOverviewSearchQuery) {
                 activeOrders = activeOrders.filter(o => 
-                    (o.productId || '').toLowerCase().includes(purchaseOverviewSearchQuery) ||
-                    (o.productName || '').toLowerCase().includes(purchaseOverviewSearchQuery)
+                    String(o.productId || '').toLowerCase().includes(purchaseOverviewSearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(purchaseOverviewSearchQuery)
                 );
             }
 
@@ -3761,7 +3761,7 @@
             let filteredProductsAnalysis = purchaseOverviewProducts;
             if (purchaseOverviewSearchQuery) {
                 filteredProductsAnalysis = filteredProductsAnalysis.filter(x => 
-                    x.productId.toLowerCase().includes(purchaseOverviewSearchQuery) ||
+                    String(x.productId || '').toLowerCase().includes(purchaseOverviewSearchQuery) ||
                     String(x.productName || '').toLowerCase().includes(purchaseOverviewSearchQuery)
                 );
             }
