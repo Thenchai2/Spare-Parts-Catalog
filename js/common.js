@@ -196,7 +196,7 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
             }
 
             // 7. Fetch data
-            fetchData(true); 
+            fetchData(false); 
         });
 
         document.addEventListener('click', function(event) {
@@ -251,7 +251,7 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
             }
             
             const mapMachContainer = document.getElementById('map_machine_search');
-            if (mapMachContainer && !mapMachContainer.parentElement.contains(event.target)) hideMachineSuggestions();
+            if (mapMachContainer && !mapMachContainer.parentElement.contains(event.target) && typeof hideMachineSuggestions === 'function') hideMachineSuggestions();
             
             const restockProductInput = document.getElementById('restock_product_input');
             if (restockProductInput) {
@@ -862,104 +862,133 @@ let db = { products: [], machines: [], mappings: [], purchaseOrders: [] };
 
         const LS_CACHE_KEY = 'spareparts_cache_v1';
         const LS_CACHE_TTL = 5 * 60 * 1000; // 5 นาที (ms)
+        let isFirebaseListenerInitialized = false;
+        let firebaseListenerPromise = null;
+        let resolveFirstFetch = null;
 
         async function fetchData(forceRefresh = false) {
-            // ถ้าไม่ได้บังคับ refresh → ตรวจสอบ localStorage cache ก่อน
-            if (!forceRefresh) {
-                try {
-                    const raw = localStorage.getItem(LS_CACHE_KEY);
-                    if (raw) {
-                        const cached = JSON.parse(raw);
-                        const age = Date.now() - (cached.ts || 0);
-                        const hasData = cached.data
-                            && Array.isArray(cached.data.products)
-                            && cached.data.products.length > 0;
-
-                        if (age < LS_CACHE_TTL && hasData) {
-                            // ข้อมูล cache ยังสดและไม่ว่าง → แสดงทันที
-                            db = cached.data;
-                            updateAllViews();
-                            // ดึงข้อมูลใหม่เบื้องหลัง (ไม่แสดง spinner)
-                            _fetchFromServer(true);
-                            return;
-                        }
+            // 1. ดึงข้อมูลจาก Cache ใน LocalStorage ขึ้นมาแสดงก่อนทันทีเพื่อความรวดเร็ว
+            try {
+                const raw = localStorage.getItem(LS_CACHE_KEY);
+                if (raw) {
+                    const cached = JSON.parse(raw);
+                    const hasData = cached.data
+                        && Array.isArray(cached.data.products)
+                        && cached.data.products.length > 0;
+                    if (hasData) {
+                        db = cached.data;
+                        updateAllViews();
                     }
-                } catch(e) {
-                    // localStorage มีปัญหา → ล้าง cache แล้วดึงใหม่
-                    try { localStorage.removeItem(LS_CACHE_KEY); } catch(_) {}
+                }
+            } catch (e) {
+                try { localStorage.removeItem(LS_CACHE_KEY); } catch(_) {}
+            }
+
+            // 2. ถ้ามีการกด Force Refresh หรือแอปยังไม่มีข้อมูลในตัวแปร db เลย ให้แสดง loading
+            const hasNoData = !db || !db.products || db.products.length === 0;
+            if (forceRefresh || hasNoData) {
+                showLoading('กำลังซิงค์ข้อมูลระบบ...');
+            }
+
+            // 3. เริ่มต้นเปิด Real-time Listener (ถ้ายังไม่ได้รัน)
+            if (!isFirebaseListenerInitialized) {
+                isFirebaseListenerInitialized = true;
+                
+                firebaseListenerPromise = new Promise((resolve, reject) => {
+                    resolveFirstFetch = resolve;
+                    
+                    try {
+                        // ใช้ Firebase Realtime Database SDK เพื่อเปิดฟังข้อมูลแบบ Real-time (WebSocket)
+                        firebase.database().ref().on('value', (snapshot) => {
+                            try {
+                                const fbData = snapshot.val();
+                                if (fbData) {
+                                    const ensureArray = (val) => {
+                                        if (!val) return [];
+                                        if (Array.isArray(val)) return val;
+                                        if (typeof val === 'object') {
+                                            return Object.keys(val)
+                                                .sort((a, b) => Number(a) - Number(b))
+                                                .map(key => val[key]);
+                                        }
+                                        return [];
+                                    };
+
+                                    const appDataNode = fbData.appData || {};
+                                    const consolidated = {
+                                        products: ensureArray(appDataNode.products),
+                                        machines: ensureArray(appDataNode.machines),
+                                        mappings: ensureArray(fbData.mappings),
+                                        settings: appDataNode.settings || {},
+                                        manuals: ensureArray(appDataNode.manuals),
+                                        lots: ensureArray(fbData.lots),
+                                        purchaseOrders: ensureArray(appDataNode.purchaseOrders)
+                                    };
+
+                                    if (consolidated.products && consolidated.products.length > 0) {
+                                        db = consolidated;
+                                        try {
+                                            localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data: db, ts: Date.now() }));
+                                        } catch(e) {}
+                                        
+                                        updateAllViews();
+                                    }
+                                }
+                            } catch (err) {
+                                console.error("Error in Firebase real-time listener callback:", err);
+                            } finally {
+                                // โหลดข้อมูลเสร็จเรียบร้อยในรอบแรก
+                                if (resolveFirstFetch) {
+                                    resolveFirstFetch();
+                                    resolveFirstFetch = null;
+                                }
+                                hideLoading();
+                            }
+                        }, (fbErr) => {
+                            console.warn("Real-time sync failed. Falling back to Google Apps Script:", fbErr);
+                            // หากต่อ Firebase ไม่ได้ ให้ข้ามไปดึงข้อมูลผ่าน Apps Script แทน
+                            _fetchFromBackupServer().then(resolve).catch(reject);
+                        });
+                    } catch (err) {
+                        console.error("Firebase SDK Listener Setup Error:", err);
+                        _fetchFromBackupServer().then(resolve).catch(reject);
+                    }
+                });
+            } else {
+                // ถ้า Listener ทำงานอยู่แล้ว
+                if (forceRefresh) {
+                    // หากผู้ใช้กด Refresh ด้วยตัวเอง ให้แสดงว่าอัปเดตแล้ว (เนื่องจาก Listener ดึงข้อมูลล่าสุดให้อยู่ตลอดเวลาอยู่แล้ว)
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    hideLoading();
+                    showToast('ข้อมูลเป็นปัจจุบันแล้ว');
                 }
             }
 
-            // ไม่มี cache / cache หมดอายุ / ข้อมูลว่าง → ดึงจาก server + แสดง spinner
-            showLoading('กำลังดึงข้อมูลระบบ...');
-            await _fetchFromServer(false);
+            // รอจนกว่าจะดึงข้อมูลเสร็จสิ้นในรอบแรก (ถ้าจำเป็น)
+            if (firebaseListenerPromise) {
+                await firebaseListenerPromise;
+            }
         }
 
-        async function _fetchFromServer(background = false) {
+        async function _fetchFromBackupServer() {
             try {
-                let data = null;
+                const res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
                 
-                // ลองดึงจาก Firebase ก่อนเพื่อความเร็วสูงสุด
-                if (FIREBASE_DB_URL) {
-                    try {
-                        const res = await fetch(FIREBASE_DB_URL);
-                        if (res.ok) {
-                            let fbData = await res.json();
-                            if (fbData) {
-                                // ป้องกันปัญหา Firebase แปลง Array ที่ดัชนีไม่เรียงกัน (Sparse Array) ให้กลายเป็น Object
-                                const ensureArray = (val) => {
-                                    if (!val) return [];
-                                    if (Array.isArray(val)) return val;
-                                    if (typeof val === 'object') {
-                                        return Object.keys(val)
-                                            .sort((a, b) => Number(a) - Number(b))
-                                            .map(key => val[key]);
-                                    }
-                                    return [];
-                                };
-                                
-                                const appDataNode = fbData.appData || {};
-                                const consolidated = {
-                                    products: ensureArray(appDataNode.products),
-                                    machines: ensureArray(appDataNode.machines),
-                                    mappings: ensureArray(fbData.mappings),
-                                    settings: appDataNode.settings || {},
-                                    manuals: ensureArray(appDataNode.manuals),
-                                    lots: ensureArray(fbData.lots),
-                                    purchaseOrders: ensureArray(appDataNode.purchaseOrders)
-                                };
-                                
-                                if (consolidated.products && consolidated.products.length > 0) {
-                                    data = consolidated;
-                                }
-                            }
-                        }
-                    } catch (fbErr) {
-                        console.warn("ดึงข้อมูลจาก Firebase ล้มเหลว กำลังใช้การดึงข้อมูลสำรองจาก Google Apps Script: ", fbErr);
-                    }
-                }
-                
-                // หากดึงจาก Firebase ไม่สำเร็จ, ข้อมูลว่างเปล่า, หรือรูปแบบไม่ถูกต้อง -> ดึงจาก Google Apps Script สำรอง (Google Drive)
-                if (!data || !data.products || !Array.isArray(data.products)) {
-                    const res = await fetch(API_URL + '?action=getAppData', { method: 'GET' });
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    data = await res.json();
-                }
-
-                // ตรวจสอบว่าข้อมูลที่ได้กลับมา valid ก่อน cache
                 if (data && Array.isArray(data.products)) {
+                    db = data;
                     try {
                         localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
-                    } catch(e) { /* storage full → ข้ามได้ */ }
-                    db = data;
+                    } catch(e) {}
                     updateAllViews();
                 } else {
                     throw new Error('ข้อมูลที่ได้รับไม่ถูกต้อง');
                 }
             } catch (error) {
-                if (!background) showToast('ไม่สามารถดึงข้อมูลได้: ' + error.message, 'error');
+                showToast('ไม่สามารถดึงข้อมูลได้: ' + error.message, 'error');
             }
-            if (!background) hideLoading();
+            hideLoading();
         }
 // ==========================================
 // Firebase Direct Backend Bypass Interceptor

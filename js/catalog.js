@@ -1,5 +1,7 @@
         // ===== Settings & User Management System =====
         let transactions = [];
+        let publicManualsCurrentPage = 1;
+        let manageManualsCurrentPage = 1;
         // Report global variables — declared at module level so global functions (filterReport, exportReportToExcel, etc.) can access them
         if (typeof window.reportFilteredProducts === 'undefined') window.reportFilteredProducts = [];
         if (typeof window.reportProductUsageMap === 'undefined') window.reportProductUsageMap = new Map();
