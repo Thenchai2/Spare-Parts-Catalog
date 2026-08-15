@@ -1922,7 +1922,7 @@
 
                         <div>
                             <label class="block font-semibold text-slate-600 mb-1">Supplier</label>
-                            <input type="text" id="swal-update-supplier" value="${escapeHTML(currentSupplier)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุซัพพลายเออร์">
+                            <input type="text" id="swal-update-supplier" list="list_product_suppliers" value="${escapeHTML(currentSupplier)}" class="swal2-input !mx-0 !w-full !text-xs !h-9" placeholder="ระบุซัพพลายเออร์">
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -4262,5 +4262,16 @@ function populateDatalists() {
     const dlProdGroups = document.getElementById('list_product_groups');
     if (dlProdGroups) {
         dlProdGroups.innerHTML = productGroups.map(g => `<option value="${escapeHTML(g)}">`).join('');
+    }
+
+    // ซัพพลายเออร์ (Suppliers)
+    const productSuppliers = db.products ? db.products.map(p => p.supplier).filter(Boolean) : [];
+    const orderSuppliers = db.purchaseOrders ? db.purchaseOrders.map(o => o.supplier).filter(Boolean) : [];
+    const machineSuppliers = db.machines ? db.machines.map(m => m.supplier).filter(Boolean) : [];
+    const allSuppliers = [...new Set([...productSuppliers, ...orderSuppliers, ...machineSuppliers])].map(s => s.trim()).filter(Boolean).sort();
+    
+    const dlProdSuppliers = document.getElementById('list_product_suppliers');
+    if (dlProdSuppliers) {
+        dlProdSuppliers.innerHTML = allSuppliers.map(s => `<option value="${escapeHTML(s)}">`).join('');
     }
 }
