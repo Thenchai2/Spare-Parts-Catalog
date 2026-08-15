@@ -205,11 +205,6 @@
                 }, 50);
             } else if (key === 'manage-orders') {
                 desc = "ตรวจสอบความคืบหน้า อนุมัติ หรืออัปเดตใบสั่งซื้อ";
-                
-                // Get unique suppliers list from db.products
-                const products = db.products || [];
-                const suppliers = [...new Set(products.map(p => p.supplier || 'ไม่ระบุ').filter(Boolean))].sort();
-                const supplierOptions = suppliers.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
 
                 htmlContent = `
                     <div class="space-y-6">
@@ -218,9 +213,8 @@
                             <!-- Left: Filter Dropdown -->
                             <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                                 <span class="text-xs font-semibold text-slate-500">กรองซัพพลายเออร์:</span>
-                                <select onchange="handleManageOrdersSupplierFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[200px]">
+                                <select id="manageOrdersSupplierFilterSelect" onchange="handleManageOrdersSupplierFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[200px]">
                                     <option value="">ทั้งหมด</option>
-                                    ${supplierOptions}
                                 </select>
                             </div>
                             <!-- Right: Search Field -->
@@ -1664,9 +1658,30 @@
             const orders = db.purchaseOrders || [];
             
             // Filter: only status "เตรียมสั่ง" and "รออนุมัติ"
-            let filtered = orders.filter(o => o.status === "เตรียมสั่ง" || o.status === "รออนุมัติ");
+            let baseFiltered = orders.filter(o => o.status === "เตรียมสั่ง" || o.status === "รออนุมัติ");
+
+            // Update Supplier Filter Dropdown Options dynamically based on orders in this view
+            const supplierSelect = document.getElementById('manageOrdersSupplierFilterSelect');
+            if (supplierSelect) {
+                const activeSuppliers = [...new Set(baseFiltered.map(o => {
+                    const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
+                    return o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+                }).filter(Boolean))].sort();
+
+                const supplierOptions = activeSuppliers.map(s => `<option value="${escapeHTML(s)}">${escapeHTML(s)}</option>`).join('');
+                supplierSelect.innerHTML = `<option value="">ทั้งหมด</option>${supplierOptions}`;
+                
+                // Restore previous select value if it's still available, otherwise reset it
+                if (activeSuppliers.includes(manageOrdersSupplierFilter)) {
+                    supplierSelect.value = manageOrdersSupplierFilter;
+                } else {
+                    manageOrdersSupplierFilter = '';
+                    supplierSelect.value = '';
+                }
+            }
 
             // Filter by Supplier dropdown
+            let filtered = baseFiltered;
             if (manageOrdersSupplierFilter) {
                 filtered = filtered.filter(o => {
                     const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
