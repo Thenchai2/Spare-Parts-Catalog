@@ -45,29 +45,93 @@
             }
             
             const action = type === 'json' ? 'backupFirebaseToDrive' : 'backupFirebaseToSheets';
-            const confirmMsg = type === 'json' 
-                ? 'คุณต้องการสำรองข้อมูลจาก Firebase บันทึกเป็นไฟล์ JSON ใน Google Drive ใช่หรือไม่?'
-                : 'คุณต้องการสำรองข้อมูลจาก Firebase ไปบันทึกทับลงใน Google Sheet ทั้งหมดใช่หรือไม่? (การกระทำนี้จะใช้เวลาสักครู่)';
+            const titleMsg = type === 'json' ? 'สำรองข้อมูล Firebase -> JSON Drive' : 'สำรองข้อมูล Firebase -> Google Sheet';
+            
+            const htmlContent = `
+                <div class="text-left text-xs space-y-2 max-h-60 overflow-y-auto p-2 border border-slate-100 rounded-2xl">
+                    <p class="text-slate-500 mb-2 font-medium">กรุณาเลือกประเภทข้อมูลที่ต้องการสำรอง:</p>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-products" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">📦 ข้อมูลสินค้าและอะไหล่ (Products)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-machines" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">⚙️ เครื่องจักร (Machines)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-mappings" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">🔗 การจับคู่สินค้า-เครื่องจักร (Mappings)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-transactions" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">📝 ประวัติการทำรายการ (Transactions)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-lots" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">📊 ประวัติล็อตสินค้า (Lots)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-purchaseOrders" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">🛒 ใบสั่งซื้อ (Purchase Orders)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-manuals" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">📚 คู่มือการใช้งาน (Manuals)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-users" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">👥 ข้อมูลผู้ใช้งาน (Users)</span>
+                    </label>
+                    <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" id="backup-settings" checked class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <span class="text-slate-700">🔧 การตั้งค่าระบบ (Settings)</span>
+                    </label>
+                </div>
+            `;
                 
             const result = await Swal.fire({
-                title: 'ยืนยันการสำรองข้อมูล',
-                text: confirmMsg,
-                icon: 'warning',
+                title: titleMsg,
+                html: htmlContent,
+                icon: 'info',
                 showCancelButton: true,
                 confirmButtonColor: '#3085d6',
-                cancelButtonColor: '#d33',
-                confirmButtonText: 'ยืนยัน',
-                cancelButtonText: 'ยกเลิก'
+                cancelButtonColor: '#6b7280',
+                confirmButtonText: 'ยืนยันการสำรองข้อมูล',
+                cancelButtonText: 'ยกเลิก',
+                customClass: {
+                    popup: 'rounded-3xl max-w-sm',
+                    confirmButton: 'rounded-xl font-semibold !text-[11px]',
+                    cancelButton: 'rounded-xl font-semibold !text-[11px]',
+                },
+                preConfirm: () => {
+                    const targets = [];
+                    const keys = ['products', 'machines', 'mappings', 'transactions', 'lots', 'purchaseOrders', 'manuals', 'users', 'settings'];
+                    keys.forEach(k => {
+                        const el = document.getElementById('backup-' + k);
+                        if (el && el.checked) {
+                            targets.push(k);
+                        }
+                    });
+                    
+                    if (targets.length === 0) {
+                        Swal.showValidationMessage('กรุณาเลือกข้อมูลอย่างน้อย 1 รายการ');
+                        return false;
+                    }
+                    return targets;
+                }
             });
             
-            if (result.isConfirmed) {
+            if (result.isConfirmed && result.value) {
                 showLoading('กำลังสำรองข้อมูล กรุณารอสักครู่...');
                 try {
                     const res = await fetch(API_URL, {
                         method: 'POST',
                         body: JSON.stringify({
                             action: action,
-                            payload: { requesterEmail: currentUser.email }
+                            payload: { 
+                                requesterEmail: currentUser.email,
+                                targets: result.value
+                            }
                         })
                     });
                     
