@@ -92,6 +92,10 @@ function doPost(e) {
       response.data = deletePurchaseOrderActive(payload);
       response.message = 'ลบรายการสั่งซื้อสำเร็จ';
     }
+    else if (action === 'editActivePurchaseOrderQuantity') {
+      response.data = editActivePurchaseOrderQuantity(payload);
+      response.message = 'แก้ไขยอดรายการจัดซื้อสำเร็จ';
+    }
     else if (action === 'updatePurchaseOrderDraft') {
       response.data = updatePurchaseOrderDraft(payload);
       response.message = 'อัปเดตใบสั่งซื้อสำเร็จ';
@@ -1760,6 +1764,117 @@ function deletePurchaseOrderActive(payload) {
     setFirebaseData("appData/purchaseOrders", purchaseOrders);
     
     return { poNumber: poNumber, deleted: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 12.4.3 แก้ไขยอดสั่งซื้อ/ยอดรับเข้าในหน้าตรวจรับสินค้า (สิทธิ์ ADMIN)
+function editActivePurchaseOrderQuantity(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบไม่ว่างชั่วคราว กรุณาลองใหม่อีกครั้ง");
+  }
+
+  try {
+    const poNum = String(payload.poNumber || '').trim();
+    const prodId = String(payload.productId || '').trim();
+    
+    let purchaseOrders = getFirebaseData("appData/purchaseOrders") || [];
+    let products = getFirebaseData("appData/products") || [];
+    let lots = getFirebaseData("lots") || [];
+    let transactions = getFirebaseData("transactions") || [];
+
+    let poIndex = -1;
+    for (let i = 0; i < purchaseOrders.length; i++) {
+      const o = purchaseOrders[i];
+      if (String(o.poNumber).trim() === poNum && (!prodId || String(o.productId).trim() === prodId)) {
+        poIndex = i;
+        break;
+      }
+    }
+    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum);
+
+    const po = purchaseOrders[poIndex];
+    const oldOrdered = parseFloat(po.orderedQty) || 0;
+    const oldReceived = parseFloat(po.receivedQty) || 0;
+
+    const newOrdered = payload.orderedQty !== undefined ? (parseFloat(payload.orderedQty) || 0) : oldOrdered;
+    const newReceived = payload.receivedQty !== undefined ? (parseFloat(payload.receivedQty) || 0) : oldReceived;
+
+    if (newOrdered <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    if (newReceived < 0) throw new Error("จำนวนที่รับต้องไม่ต่ำกว่า 0");
+    if (newReceived > newOrdered) {
+      throw new Error("จำนวนที่รับ (" + newReceived + ") ไม่สามารถมากกว่าจำนวนที่สั่ง (" + newOrdered + ") ได้");
+    }
+
+    const unitCost = parseFloat(po.unitCost) || 0;
+    po.orderedQty = newOrdered;
+    po.receivedQty = newReceived;
+    po.totalCost = newOrdered * unitCost;
+
+    if (newReceived >= newOrdered) {
+      po.status = "ได้รับครบ";
+    } else if (newReceived > 0) {
+      po.status = "ค้างส่ง";
+    } else {
+      po.status = "สั่งแล้ว";
+    }
+
+    if (newReceived > 0 && !po.lastReceivedDate) {
+      po.lastReceivedDate = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd");
+    }
+
+    const recDiff = newReceived - oldReceived;
+    if (recDiff !== 0) {
+      for (let i = 0; i < products.length; i++) {
+        if (String(products[i].id).trim() === String(po.productId).trim()) {
+          products[i].stock_qty = Math.max(0, (parseFloat(products[i].stock_qty) || 0) + recDiff);
+          break;
+        }
+      }
+      for (let i = 0; i < lots.length; i++) {
+        if (lots[i].product_id === po.productId && lots[i].note && (lots[i].note.indexOf(poNum) !== -1)) {
+          lots[i].remaining_qty = Math.max(0, (parseFloat(lots[i].remaining_qty) || 0) + recDiff);
+          lots[i].initial_qty = Math.max(0, (parseFloat(lots[i].initial_qty) || 0) + recDiff);
+          break;
+        }
+      }
+      let lastTxId = 0;
+      if (transactions.length > 0) {
+        const lastTx = transactions[transactions.length - 1];
+        lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+      }
+      const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+      transactions.push({
+        id: nextTxId,
+        requester: payload.requester || "ผู้ดูแลระบบ (Admin)",
+        department: payload.department || "ผู้ดูแลระบบ",
+        machine_id: "PO_ADJUST",
+        serial_number: "",
+        total_price: 0,
+        note: "แก้ไขยอดรับสินค้า PO " + poNum + " (" + (recDiff > 0 ? '+' : '') + recDiff + ")",
+        created_at: Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss"),
+        status: recDiff > 0 ? "Restock" : "Adjustment",
+        items: [{
+          lot_id: "",
+          product_id: po.productId,
+          qty: Math.abs(recDiff),
+          cost: unitCost,
+          price: 0
+        }]
+      });
+
+      setFirebaseData("appData/products", products);
+      setFirebaseData("lots", lots);
+      setFirebaseData("transactions", transactions);
+    }
+
+    setFirebaseData("appData/purchaseOrders", purchaseOrders);
+
+    return { poNumber: poNum, orderedQty: newOrdered, receivedQty: newReceived, status: po.status };
   } finally {
     lock.releaseLock();
   }

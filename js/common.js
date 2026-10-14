@@ -1017,7 +1017,8 @@ const BYPASS_ACTIONS = [
     'deletePurchaseOrderDraft',
     'deletePurchaseOrderActive',
     'updatePurchaseOrderDraft',
-    'receivePurchaseGoods'
+    'receivePurchaseGoods',
+    'editActivePurchaseOrderQuantity'
 ];
 
 async function sha256(message) {
@@ -1097,6 +1098,8 @@ async function handleActionDirectlyOnFirebase(action, payload) {
                 return { status: 'success', message: 'บันทึกการแก้ไขใบจัดซื้อสำเร็จ' };
             case 'receivePurchaseGoods':
                 return { status: 'success', data: await executeDirectReceivePurchaseGoods(payload) };
+            case 'editActivePurchaseOrderQuantity':
+                return { status: 'success', data: await executeDirectEditActivePurchaseOrderQuantity(payload), message: 'แก้ไขยอดรายการจัดซื้อสำเร็จ' };
             default:
                 throw new Error("Action not supported directly on Firebase");
         }
@@ -1900,6 +1903,120 @@ async function executeDirectReceivePurchaseGoods(payload) {
     db.transactions = transactions;
     
     return { status: "success", poNumber: poNum };
+}
+
+async function executeDirectEditActivePurchaseOrderQuantity(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+
+    let purchaseOrders = ensureArray(fbData.appData?.purchaseOrders);
+    let products = ensureArray(fbData.appData?.products);
+    let lots = ensureArray(fbData.lots);
+    let transactions = ensureArray(fbData.transactions);
+
+    const poNum = String(payload.poNumber || '').trim();
+    const prodId = String(payload.productId || '').trim();
+
+    const poIndex = purchaseOrders.findIndex(o =>
+        String(o.poNumber).trim() === poNum &&
+        (!prodId || String(o.productId).trim() === prodId)
+    );
+    if (poIndex === -1) throw new Error("ไม่พบรายการใบสั่งซื้อ " + poNum + (prodId ? ` (${prodId})` : ''));
+
+    const po = purchaseOrders[poIndex];
+    const oldOrdered = parseFloat(po.orderedQty) || 0;
+    const oldReceived = parseFloat(po.receivedQty) || 0;
+
+    const newOrdered = payload.orderedQty !== undefined ? (parseFloat(payload.orderedQty) || 0) : oldOrdered;
+    const newReceived = payload.receivedQty !== undefined ? (parseFloat(payload.receivedQty) || 0) : oldReceived;
+
+    if (newOrdered <= 0) throw new Error("จำนวนที่สั่งต้องมากกว่า 0");
+    if (newReceived < 0) throw new Error("จำนวนที่รับต้องไม่ต่ำกว่า 0");
+    if (newReceived > newOrdered) {
+        throw new Error("จำนวนที่รับ (" + newReceived + ") ไม่สามารถมากกว่าจำนวนที่สั่ง (" + newOrdered + ") ได้");
+    }
+
+    const unitCost = parseFloat(po.unitCost) || 0;
+    po.orderedQty = newOrdered;
+    po.receivedQty = newReceived;
+    po.totalCost = newOrdered * unitCost;
+
+    if (newReceived >= newOrdered) {
+        po.status = "ได้รับครบ";
+    } else if (newReceived > 0) {
+        po.status = "ค้างส่ง";
+    } else {
+        po.status = "สั่งแล้ว";
+    }
+
+    if (newReceived > 0 && !po.lastReceivedDate) {
+        po.lastReceivedDate = new Date().toISOString().split('T')[0];
+    }
+
+    // Difference in received quantity
+    const recDiff = newReceived - oldReceived;
+    if (recDiff !== 0) {
+        // Update product stock
+        const product = products.find(p => String(p.id).trim() === String(po.productId).trim());
+        if (product) {
+            product.stock_qty = Math.max(0, (parseFloat(product.stock_qty) || 0) + recDiff);
+        }
+
+        // Update lot if exists
+        const poLot = lots.find(l => l.product_id === po.productId && l.note && (l.note.includes(poNum) || l.note.includes("PO " + poNum)));
+        if (poLot) {
+            poLot.remaining_qty = Math.max(0, (parseFloat(poLot.remaining_qty) || 0) + recDiff);
+            poLot.initial_qty = Math.max(0, (parseFloat(poLot.initial_qty) || 0) + recDiff);
+        }
+
+        // Add adjustment transaction
+        let lastTxId = 0;
+        if (transactions.length > 0) {
+            const lastTx = transactions[transactions.length - 1];
+            lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+        }
+        const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+
+        transactions.push({
+            id: nextTxId,
+            requester: payload.requester || "ผู้ดูแลระบบ (Admin)",
+            department: payload.department || "ผู้ดูแลระบบ",
+            machine_id: "PO_ADJUST",
+            serial_number: "",
+            total_price: 0,
+            note: `แก้ไขยอดรับสินค้า PO ${poNum} (${recDiff > 0 ? '+' : ''}${recDiff})`,
+            created_at: getFormattedDateTimeString(),
+            status: recDiff > 0 ? "Restock" : "Adjustment",
+            items: [{
+                lot_id: poLot ? poLot.lot_id : "",
+                product_id: po.productId,
+                qty: Math.abs(recDiff),
+                cost: unitCost,
+                price: 0
+            }]
+        });
+    }
+
+    const updates = {};
+    updates["appData/purchaseOrders"] = purchaseOrders;
+    if (recDiff !== 0) {
+        updates["appData/products"] = products;
+        updates["lots"] = lots;
+        updates["transactions"] = transactions;
+    }
+
+    await firebase.database().ref().update(updates);
+    transactionsCache = null;
+
+    db.purchaseOrders = purchaseOrders;
+    if (recDiff !== 0) {
+        db.products = products;
+        db.lots = lots;
+        db.transactions = transactions;
+    }
+    invalidateLocalCache();
+
+    return { status: "success", poNumber: poNum, orderedQty: newOrdered, receivedQty: newReceived, status: po.status };
 }
 
 function ensureArray(val) {
