@@ -72,6 +72,10 @@ function doPost(e) {
       response.data = restockProduct(payload);
       response.message = 'เติมสต็อกสำเร็จ';
     }
+    else if (action === 'syncErpStock') {
+      response.data = syncErpStock(payload);
+      response.message = 'อัปเดตสต็อกจาก ERP สำเร็จ';
+    }
     else if (action === 'receivePurchaseGoods') {
       response.data = receivePurchaseGoods(payload);
       response.message = 'บันทึกการรับสินค้าเข้าคลังสำเร็จ';
@@ -1386,6 +1390,99 @@ function updateSelfProfile(payload) {
 }
 
 // 12. บันทึกการเพิ่มสต็อกสินค้า (Restock) พร้อมอัปเดตสต็อกในชีต Products และสร้าง Lot ใหม่ลง JSON
+function syncErpStock(payload) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw new Error("ระบบกำลังทำงานอยู่ กรุณาลองใหม่อีกครั้ง");
+  }
+  
+  try {
+    const db = getFirebaseData("") || {};
+    let products = db.appData?.products || [];
+    let lots = db.lots || [];
+    let transactions = db.transactions || [];
+    
+    const items = payload.items || [];
+    if (items.length === 0) return { updatedCount: 0 };
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+      const lastTx = transactions[transactions.length - 1];
+      lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+    const nowStr = Utilities.formatDate(new Date(), "Asia/Bangkok", "yyyy-MM-dd HH:mm:ss");
+    
+    const txItems = [];
+    let updatedCount = 0;
+    
+    items.forEach(function(it, idx) {
+      const pId = String(it.id).trim();
+      const prod = products.find(function(p) { return String(p.id).trim() === pId; });
+      if (!prod) return;
+      
+      const oldQty = parseFloat(prod.stock_qty) || 0;
+      const newQty = parseFloat(it.newQty) || 0;
+      const diff = newQty - oldQty;
+      
+      prod.stock_qty = newQty;
+      updatedCount++;
+      
+      if (diff !== 0) {
+        const lotId = "LOT-ERP-" + pId + "-" + Date.now() + "-" + idx;
+        lots.push({
+          lot_id: lotId,
+          product_id: pId,
+          cost: parseFloat(prod.cost) || 0,
+          price_a: parseFloat(prod.price_a) || 0,
+          price_b: parseFloat(prod.price_b) || 0,
+          price_c: parseFloat(prod.price_c) || 0,
+          initial_qty: diff,
+          remaining_qty: diff,
+          created_at: nowStr,
+          note: "อัปเดตสต็อก ERP (" + oldQty + " -> " + newQty + ")"
+        });
+        
+        txItems.push({
+          lot_id: lotId,
+          product_id: pId,
+          qty: diff,
+          cost: parseFloat(prod.cost) || 0,
+          price: 0
+        });
+      }
+    });
+    
+    if (txItems.length > 0) {
+      transactions.push({
+        id: nextTxId,
+        requester: payload.requester || "สโตร์ (ERP Sync)",
+        department: payload.department || "สโตร์ (ERP Sync)",
+        machine_id: "ERP-SYNC",
+        serial_number: "",
+        total_price: 0,
+        note: payload.note || ("อัปเดตสต็อกจากไฟล์ ERP จำนวน " + txItems.length + " รายการ"),
+        created_at: nowStr,
+        status: "Restock",
+        items: txItems
+      });
+    }
+    
+    const updates = {
+      "appData/products": products,
+      "lots": lots,
+      "transactions": transactions
+    };
+    patchFirebaseData("", updates);
+    
+    return { updatedCount: updatedCount, changedCount: txItems.length, transaction_id: nextTxId };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function restockProduct(payload) {
   const lock = LockService.getScriptLock();
   try {

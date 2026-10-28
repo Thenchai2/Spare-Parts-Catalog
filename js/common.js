@@ -1001,6 +1001,7 @@ const BYPASS_ACTIONS = [
     'getTransactions',
     'checkoutOrder',
     'restockProduct',
+    'syncErpStock',
     'cancelTransaction',
     'deleteTransaction',
     'addMapping',
@@ -1067,6 +1068,8 @@ async function handleActionDirectlyOnFirebase(action, payload) {
                 return { status: 'success', data: await executeDirectCheckout(payload) };
             case 'restockProduct':
                 return { status: 'success', data: await executeDirectRestock(payload) };
+            case 'syncErpStock':
+                return { status: 'success', data: await executeDirectSyncErpStock(payload), message: 'อัปเดตสต็อกจาก ERP สำเร็จ' };
             case 'cancelTransaction':
                 await executeDirectCancelTransaction(payload);
                 return { status: 'success', message: 'ยกเลิกใบเบิกสำเร็จ คืนสต็อกอะไหล่เข้าคลังเรียบร้อยแล้ว' };
@@ -1438,6 +1441,95 @@ async function executeDirectCheckout(payload) {
     invalidateLocalCache();
     
     return { transaction_id: txId, items: checkoutItems };
+}
+
+async function executeDirectSyncErpStock(payload) {
+    const snapshot = await firebase.database().ref().get();
+    const fbData = snapshot.val() || {};
+    
+    let products = ensureArray(fbData.appData?.products);
+    let lots = ensureArray(fbData.lots);
+    let transactions = ensureArray(fbData.transactions);
+    
+    const items = payload.items || [];
+    if (items.length === 0) return { updatedCount: 0 };
+    
+    let lastTxId = 0;
+    if (transactions.length > 0) {
+        const lastTx = transactions[transactions.length - 1];
+        lastTxId = parseInt(String(lastTx.id).replace("TX-", "")) || 0;
+    }
+    const nextTxId = "TX-" + String(lastTxId + 1).padStart(6, '0');
+    const nowStr = getFormattedDateTimeString();
+    const txItems = [];
+    let updatedCount = 0;
+    
+    items.forEach((it, idx) => {
+        const pId = String(it.id).trim();
+        const prod = products.find(p => String(p.id).trim() === pId);
+        if (!prod) return;
+        
+        const oldQty = parseFloat(prod.stock_qty) || 0;
+        const newQty = parseFloat(it.newQty) || 0;
+        const diff = newQty - oldQty;
+        
+        prod.stock_qty = newQty;
+        updatedCount++;
+        
+        if (diff !== 0) {
+            const lotId = "LOT-ERP-" + pId + "-" + Date.now() + "-" + idx;
+            lots.push({
+                lot_id: lotId,
+                product_id: pId,
+                cost: parseFloat(prod.cost) || 0,
+                price_a: parseFloat(prod.price_a) || 0,
+                price_b: parseFloat(prod.price_b) || 0,
+                price_c: parseFloat(prod.price_c) || 0,
+                initial_qty: diff,
+                remaining_qty: diff,
+                created_at: nowStr,
+                note: `อัปเดตสต็อก ERP (${oldQty} -> ${newQty})`
+            });
+            
+            txItems.push({
+                lot_id: lotId,
+                product_id: pId,
+                qty: diff,
+                cost: parseFloat(prod.cost) || 0,
+                price: 0
+            });
+        }
+    });
+    
+    if (txItems.length > 0) {
+        const newTransaction = {
+            id: nextTxId,
+            requester: payload.requester || 'สโตร์ (ERP Sync)',
+            department: payload.department || 'สโตร์ (ERP Sync)',
+            machine_id: 'ERP-SYNC',
+            serial_number: '',
+            total_price: 0,
+            note: payload.note || `อัปเดตสต็อกจากไฟล์ ERP จำนวน ${txItems.length} รายการ`,
+            created_at: nowStr,
+            status: 'Restock',
+            items: txItems
+        };
+        transactions.push(newTransaction);
+    }
+    
+    const updates = {};
+    updates["appData/products"] = products;
+    updates["lots"] = lots;
+    updates["transactions"] = transactions;
+    await firebase.database().ref().update(updates);
+    transactionsCache = null;
+    
+    db.products = products;
+    db.lots = lots;
+    db.transactions = transactions;
+    invalidateLocalCache();
+    
+    return { updatedCount: updatedCount, changedCount: txItems.length, transaction_id: nextTxId };
 }
 
 async function executeDirectRestock(payload) {

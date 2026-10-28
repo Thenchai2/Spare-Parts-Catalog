@@ -1733,6 +1733,25 @@
                             </div>
                         </div>
 
+                        <!-- Card 10: อัพเดทสต็อกจาก ERP -->
+                        <div id="card-settings-erp-sync" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 overflow-hidden flex flex-col justify-between min-h-[200px] hidden">
+                            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-emerald-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
+                            <div class="flex justify-between items-start z-10">
+                                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                    <i class="fa-solid fa-file-excel text-2xl"></i>
+                                </div>
+                                <span class="text-[10px] font-bold px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full">ERP Sync</span>
+                            </div>
+                            <div class="mt-4 z-10 w-full">
+                                <h3 class="text-lg font-bold text-slate-800 transition-colors">อัพเดทสต็อกจาก ERP</h3>
+                                <p class="text-xs text-slate-500 mt-1 mb-4 leading-relaxed">อัพเดทยอดคงเหลือ (On Hand) ในระบบให้ตรงกับไฟล์รายงานสต็อกจากระบบ ERP</p>
+                                <button onclick="triggerErpStockUpload()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-2.5 px-4 rounded-xl transition-all duration-200 shadow-sm hover:shadow-md active:scale-95 flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-cloud-arrow-up text-sm"></i> อัพโหลดไฟลสต๊อกจาก ERP
+                                </button>
+                                <input type="file" id="erpStockFileInput" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleErpStockFileSelected(event)">
+                            </div>
+                        </div>
+
                         <!-- Card 9: สำรองข้อมูลระบบ (ADMIN) -->
                         <div id="card-settings-backup" class="group relative bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-xl hover:-translate-y-1.5 transition-all duration-300 overflow-hidden flex flex-col justify-between min-h-[200px] hidden">
                             <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-red-50 rounded-full group-hover:scale-110 transition-transform duration-300 opacity-60"></div>
