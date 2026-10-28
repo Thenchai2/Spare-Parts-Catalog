@@ -6840,13 +6840,16 @@ function exportReportToExcel() {
                     <div class="space-y-6">
                         <!-- Sub Header Control Row -->
                         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                            <!-- Left: Filter Dropdown -->
-                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                            <!-- Left: Filter Dropdown & Export Excel -->
+                            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-wrap">
                                 <span class="text-xs font-semibold text-slate-500">กรองซัพพลายเออร์:</span>
                                 <select onchange="handleManageOrdersSupplierFilter(this.value)" class="px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 shadow-sm min-w-[200px]">
                                     <option value="">ทั้งหมด</option>
                                     ${supplierOptions}
                                 </select>
+                                <button onclick="exportManageOrdersToExcel()" class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-sm hover:shadow-md active:scale-95">
+                                    <i class="fa-solid fa-file-excel"></i> ส่งออก Excel
+                                </button>
                             </div>
                             <!-- Right: Search Field -->
                             <div class="relative max-w-sm w-full md:w-80">
@@ -6869,6 +6872,7 @@ function exportReportToExcel() {
                                         <th class="p-4">ชื่อสินค้า</th>
                                         <th class="p-4">Supplier</th>
                                         <th class="p-4 text-center">จำนวนที่สั่ง</th>
+                                        <th class="p-4 text-center">หน่วย</th>
                                         <th class="p-4 text-right">ราคา/หน่วย</th>
                                         <th class="p-4 text-right">ราคารวม</th>
                                         <th class="p-4 text-center rounded-tr-2xl" style="width: 110px;">จัดการ</th>
@@ -8257,12 +8261,13 @@ function exportReportToExcel() {
                 return;
             }
 
-            const data = draftOrders.map(o => {
+            const data = draftOrders.map((o, index) => {
                 const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
                 const unit = prod ? prod.unit : 'ชิ้น';
                 const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
 
                 return {
+                    "ลำดับ": index + 1,
                     "รหัสสินค้า": String(o.productId),
                     "ชื่อสินค้า": o.productName || '',
                     "จำนวนที่สั่ง": parseFloat(o.orderedQty) || 0,
@@ -8277,6 +8282,7 @@ function exportReportToExcel() {
 
             const max_width = data.reduce((w, r) => Math.max(w, r["ชื่อสินค้า"].length), 10);
             worksheet["!cols"] = [
+                { wch: 8 },  // ลำดับ
                 { wch: 15 }, // รหัสสินค้า
                 { wch: Math.min(max_width + 4, 50) }, // ชื่อสินค้า
                 { wch: 15 }, // จำนวนที่สั่ง
@@ -8287,7 +8293,11 @@ function exportReportToExcel() {
             // Format numbers
             const range = XLSX.utils.decode_range(worksheet['!ref']);
             for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-                const qty_cell = XLSX.utils.encode_cell({c: 2, r: R}); // Column C is orderedQty (0-indexed: 2)
+                const seq_cell = XLSX.utils.encode_cell({c: 0, r: R}); // Column A is ลำดับ (0-indexed: 0)
+                if (worksheet[seq_cell]) {
+                    worksheet[seq_cell].t = 'n';
+                }
+                const qty_cell = XLSX.utils.encode_cell({c: 3, r: R}); // Column D is orderedQty (0-indexed: 3)
                 if (worksheet[qty_cell]) {
                     worksheet[qty_cell].t = 'n';
                     worksheet[qty_cell].z = '#,##0';
@@ -8300,6 +8310,83 @@ function exportReportToExcel() {
             XLSX.writeFile(workbook, `Draft_Purchase_Orders_${dateStr}.xlsx`);
             showToast("ส่งออกข้อมูลสำเร็จ", "success");
         }
+
+        function exportManageOrdersToExcel() {
+            const orders = db.purchaseOrders || [];
+            let filtered = orders.filter(o => o.status === "เตรียมสั่ง" || o.status === "รออนุมัติ");
+
+            if (manageOrdersSupplierFilter) {
+                filtered = filtered.filter(o => {
+                    const prod = db.products ? db.products.find(p => String(p.id).trim() === String(o.productId).trim()) : null;
+                    const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+                    return supplier === manageOrdersSupplierFilter;
+                });
+            }
+
+            if (manageOrdersSearchQuery) {
+                filtered = filtered.filter(o => 
+                    String(o.poNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    String(o.prNumber || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    String(o.productId || '').toLowerCase().includes(manageOrdersSearchQuery) ||
+                    String(o.productName || '').toLowerCase().includes(manageOrdersSearchQuery)
+                );
+            }
+
+            if (filtered.length === 0) {
+                showToast("ไม่มีรายการสำหรับส่งออก", "warning");
+                return;
+            }
+
+            const data = filtered.map((o, index) => {
+                const prod = db.products ? db.products.find(p => String(p.id).trim() === String(o.productId).trim()) : null;
+                const unit = o.unit || (prod ? (prod.unit || 'ชิ้น') : 'ชิ้น');
+                const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+
+                return {
+                    "ลำดับ": index + 1,
+                    "รหัสสินค้า": String(o.productId),
+                    "ชื่อสินค้า": o.productName || (prod ? prod.name : '') || '',
+                    "จำนวนที่สั่ง": parseFloat(o.orderedQty) || 0,
+                    "หน่วย": unit,
+                    "Supplier": supplier
+                };
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "จัดการคำสั่งซื้อ");
+
+            const max_width = data.reduce((w, r) => Math.max(w, (r["ชื่อสินค้า"] || '').length), 10);
+            worksheet["!cols"] = [
+                { wch: 8 },  // ลำดับ
+                { wch: 15 }, // รหัสสินค้า
+                { wch: Math.min(max_width + 4, 50) }, // ชื่อสินค้า
+                { wch: 15 }, // จำนวนที่สั่ง
+                { wch: 10 }, // หน่วย
+                { wch: 20 }  // Supplier
+            ];
+
+            // Format numbers
+            const range = XLSX.utils.decode_range(worksheet['!ref']);
+            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+                const seq_cell = XLSX.utils.encode_cell({c: 0, r: R}); // Column A is ลำดับ (0-indexed: 0)
+                if (worksheet[seq_cell]) {
+                    worksheet[seq_cell].t = 'n';
+                }
+                const qty_cell = XLSX.utils.encode_cell({c: 3, r: R}); // Column D is orderedQty (0-indexed: 3)
+                if (worksheet[qty_cell]) {
+                    worksheet[qty_cell].t = 'n';
+                    worksheet[qty_cell].z = '#,##0';
+                }
+            }
+
+            const today = new Date();
+            const dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+            
+            XLSX.writeFile(workbook, `Manage_Purchase_Orders_${dateStr}.xlsx`);
+            showToast("ส่งออกข้อมูลสำเร็จ", "success");
+        }
+        window.exportManageOrdersToExcel = exportManageOrdersToExcel;
 
         function handleManageOrdersSearch(val) {
             manageOrdersSearchQuery = val.trim().toLowerCase();
@@ -8342,7 +8429,7 @@ function exportReportToExcel() {
             if (filtered.length === 0) {
                 tableBody.innerHTML = `
                     <tr>
-                        <td colspan="10" class="p-12 text-center text-slate-400">
+                        <td colspan="11" class="p-12 text-center text-slate-400">
                             <div class="flex flex-col items-center justify-center">
                                 <i class="fa-solid fa-tasks text-slate-200 text-4xl mb-2"></i>
                                 <p class="text-sm font-bold text-slate-500">ไม่มีใบสั่งซื้อที่รอการอนุมัติหรือเตรียมสั่ง</p>
@@ -8383,7 +8470,7 @@ function exportReportToExcel() {
                 // Section Header Row
                 const headerRow = `
                     <tr class="bg-blue-50/50 text-blue-800 font-bold border-y border-blue-100">
-                        <td colspan="10" class="px-4 py-2 text-xs">
+                        <td colspan="11" class="px-4 py-2 text-xs">
                             <div class="flex items-center gap-1.5">
                                 <i class="fa-solid fa-folder-open text-blue-500"></i>
                                 รายการใหม่ (ยังไม่ได้ดำเนินการจัดกลุ่ม)
@@ -8414,7 +8501,7 @@ function exportReportToExcel() {
                 // Section Header Row
                 const headerRow = `
                     <tr class="bg-slate-100 text-slate-700 font-bold border-y border-slate-200">
-                        <td colspan="10" class="px-4 py-2 text-xs">
+                        <td colspan="11" class="px-4 py-2 text-xs">
                             <div class="flex items-center gap-1.5">
                                 <i class="fa-solid fa-boxes-packing text-slate-500"></i>
                                 รายการสั่งซื้อแยกตามซัพพลายเออร์ (จัดกลุ่ม)
@@ -8428,7 +8515,7 @@ function exportReportToExcel() {
                 Object.keys(groupedBySupplier).sort().forEach(supplier => {
                     const supplierHeaderRow = `
                         <tr class="bg-amber-50/40 text-amber-800 font-bold border-b border-amber-100">
-                            <td colspan="10" class="px-6 py-1.5 text-[10px] uppercase tracking-wider">
+                            <td colspan="11" class="px-6 py-1.5 text-[10px] uppercase tracking-wider">
                                 <i class="fa-solid fa-truck-field mr-1.5"></i> Supplier: ${escapeHTML(supplier)}
                             </td>
                         </tr>
@@ -8457,6 +8544,7 @@ function exportReportToExcel() {
                 
                 const prod = db.products.find(p => String(p.id).trim() === String(o.productId).trim());
                 const supplier = o.supplier || (prod ? (prod.supplier || 'ไม่ระบุ') : 'ไม่ระบุ');
+                const unit = o.unit || (prod ? (prod.unit || 'ชิ้น') : 'ชิ้น');
 
                 const rowHtml = `
                     <tr class="hover:bg-slate-50/80 transition-colors">
@@ -8467,6 +8555,7 @@ function exportReportToExcel() {
                         <td class="p-4 font-semibold text-slate-800">${escapeHTML(o.productName)}</td>
                         <td class="p-4 text-slate-600">${escapeHTML(supplier)}</td>
                         <td class="p-4 text-center font-bold text-slate-700">${o.orderedQty}</td>
+                        <td class="p-4 text-center text-slate-500">${escapeHTML(unit)}</td>
                         <td class="p-4 text-right text-slate-600 font-mono">฿${cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td class="p-4 text-right text-slate-800 font-bold font-mono">฿${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         <td class="p-4 text-center">
@@ -8504,7 +8593,7 @@ function exportReportToExcel() {
 
             const prod = db.products.find(p => String(p.id).trim() === String(order.productId).trim());
             const currentSupplier = order.supplier || (prod ? (prod.supplier || '') : '');
-            const currentUnit = prod ? (prod.unit || 'ชิ้น') : 'ชิ้น';
+            const currentUnit = order.unit || (prod ? (prod.unit || 'ชิ้น') : 'ชิ้น');
 
             let initialCost = parseFloat(order.unitCost) || 0;
             if (initialCost === 0 && prod) {
